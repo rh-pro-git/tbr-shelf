@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Fail-closed push gate: full-history secret scan + deny-list sweep of HEAD.
+# Backstops the pre-commit gate so a push never depends on someone remembering
+# to run the scans by hand.
+set -euo pipefail
+
+DENYLIST="${PORTFOLIO_DENYLIST:-$HOME/.config/portfolio-denylist.txt}"
+
+fail() { echo "PUSH BLOCKED: $*" >&2; exit 1; }
+
+[[ -r "$DENYLIST" ]] || fail "deny-list not readable at $DENYLIST"
+
+DL="$(mktemp)"
+trap 'rm -f "$DL"' EXIT
+grep -v '^[[:space:]]*$' "$DENYLIST" > "$DL" || fail "deny-list is empty"
+
+command -v gitleaks >/dev/null || fail "gitleaks not installed"
+gitleaks git --no-banner --redact >/dev/null 2>&1 ||
+  fail "gitleaks found secret-shaped content in history (inspect with: gitleaks git --redact)"
+
+hits="$(git grep -l -i -F -f "$DL" HEAD -- 2>/dev/null | head || true)"
+[[ -z "$hits" ]] || fail "deny-listed identifier in tracked files: $hits"

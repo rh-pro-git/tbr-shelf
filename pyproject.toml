@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tbr-shelf"
+version = "1.0.0"
+description = "Self-hosted reading tracker for audiobook people: multi-catalog metadata, a rendered bookshelf, and an optional local-LLM librarian you can talk to."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "Ryan Hill" }]
+keywords = ["books", "reading", "audiobooks", "fastapi", "sqlite", "self-hosted"]
+classifiers = [
+  "Framework :: FastAPI",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
+]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "httpx>=0.27",
+  "jinja2>=3.1",
+  "pydantic>=2.7",
+  "python-multipart>=0.0.9",
+  "pillow>=10.3",
+]
+
+[project.optional-dependencies]
+voice = ["faster-whisper>=1.0"]
+dev = ["pytest>=8.2", "pytest-asyncio>=0.23", "ruff>=0.5", "hatchling>=1.25"]
+
+[project.scripts]
+tbr-shelf = "tbr_shelf.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/rh-pro-git/tbr-shelf"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tbr_shelf"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF012", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/seed_demo.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["error::DeprecationWarning:tbr_shelf"]

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Fail-closed publish gate. The commit is blocked unless every check passes.
+# The deny-list lives OUTSIDE this repo on purpose: the strings it blocks must
+# never appear in published content, including in this tooling.
+set -euo pipefail
+
+DENYLIST="${PORTFOLIO_DENYLIST:-$HOME/.config/portfolio-denylist.txt}"
+
+fail() { echo "BLOCKED: $*" >&2; exit 1; }
+
+[[ -r "$DENYLIST" ]] || fail "deny-list not readable at $DENYLIST (set PORTFOLIO_DENYLIST or restore the file)"
+
+DL="$(mktemp)"
+trap 'rm -f "$DL"' EXIT
+grep -v '^[[:space:]]*$' "$DENYLIST" > "$DL" || fail "deny-list is empty"
+
+email="$(git config user.email || true)"
+name="$(git config user.name || true)"
+[[ -n "$email" && -n "$name" ]] || fail "no publishing identity set for this repo: git config user.name '...' && git config user.email '...'"
+if printf '%s\n%s\n' "$email" "$name" | grep -qiFf "$DL"; then
+  fail "git identity matches the deny-list; configure the professional identity for this repo"
+fi
+
+command -v gitleaks >/dev/null || fail "gitleaks not installed"
+gitleaks git --pre-commit --staged --no-banner --redact >/dev/null 2>&1 ||
+  fail "gitleaks flagged secret-shaped content in the staged diff (inspect with: gitleaks git --pre-commit --staged --redact)"
+
+bad=0
+while IFS= read -r -d '' f; do
+  if git show ":$f" | grep -qiFf "$DL"; then
+    echo "BLOCKED: deny-listed identifier in staged file: $f" >&2
+    bad=1
+  fi
+done < <(git diff --cached --name-only -z --diff-filter=ACM)
+exit "$bad"
