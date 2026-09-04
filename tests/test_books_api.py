@@ -43,6 +43,41 @@ def test_lookup_result_lands_on_the_book(client: TestClient, monkeypatch: pytest
     assert current["year"] == 1937
 
 
+def test_refresh_replaces_a_manual_edit_with_the_catalog_value(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def canned(title: str, author: str = ""):
+        return (
+            [
+                {
+                    "title": title,
+                    "author": author,
+                    "year": 1937,
+                    "page_count": 310,
+                    "cover": "",
+                    "source": "OL",
+                }
+            ],
+            {"Open Library": "ok", "Google Books": "ok", "Audible": "ok"},
+        )
+
+    monkeypatch.setattr(catalogs, "search_candidates", canned)
+    book = client.get(f"/api/books/{add_book(client)['id']}").json()["book"]
+    assert book["page_count"] == 310
+    edited = client.patch(f"/api/books/{book['id']}", json={"version": book["version"], "page_count": 999})
+    assert edited.json()["book"]["page_count"] == 999
+    relooked = client.post(f"/api/books/{book['id']}/lookup", json={"version": book["version"] + 1})
+    assert relooked.json()["message"] == "Lookup queued"
+    assert (
+        client.get(f"/api/books/{book['id']}").json()["book"]["page_count"] == 999
+    )  # lookup fills blanks only
+    current = client.get(f"/api/books/{book['id']}").json()["book"]
+    refreshed = client.post(f"/api/books/{book['id']}/refresh", json={"version": current["version"]})
+    assert refreshed.json()["message"] == "Refresh queued"
+    after = client.get(f"/api/books/{book['id']}").json()["book"]
+    assert after["page_count"] == 310 and after["lookup_state"] == "ready"
+
+
 def test_stale_version_conflicts_with_current_version_in_detail(client: TestClient) -> None:
     book = add_book(client)
     current = client.get(f"/api/books/{book['id']}").json()["book"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -10,7 +11,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from .. import spines, summaries
 from ..books import get_book, update_book
 from ..context import AppContext
-from ..covers import cached_media_type, cover_path
+from ..covers import cached_media_type, clamp_fit_width, cover_path, fit_cover
 from ..speech import synthesize
 from . import get_ctx
 
@@ -21,9 +22,13 @@ EXTERNAL_SPINE_MAX_BYTES = 3_000_000
 
 
 @router.get("/books/{book_id}/cover")
-async def cover(book_id: int, ctx: AppContext = Depends(get_ctx)):
+async def cover(book_id: int, w: int = 0, ctx: AppContext = Depends(get_ctx)):
+    """The cached cover: the bytes as fetched, or with `w` a WebP resized to at most that width."""
     path = cover_path(ctx, book_id)
     if path.exists():
+        if w:
+            fitted = await asyncio.to_thread(fit_cover, ctx, book_id, clamp_fit_width(w))
+            return FileResponse(fitted, media_type="image/webp", headers=WEEK_CACHE)
         return FileResponse(path, media_type=cached_media_type(path), headers=WEEK_CACHE)
     book = get_book(ctx.db, book_id)
     return RedirectResponse(book["cover"] if book.get("cover") else "/static/cover.svg")
@@ -36,16 +41,15 @@ async def spine(book_id: int, w: int = 48, h: int = 190, src: str = "", ctx: App
     if src == "external" and not spines.external_spine_path(ctx, book_id).exists():
         raise HTTPException(404, "no external spine")
     if src == "external" or (src != "local" and spines.effective_spine_source(ctx, book) == "external"):
-        return FileResponse(
-            spines.fit_external_spine(ctx, book_id, width, height), media_type="image/png", headers=WEEK_CACHE
-        )
+        fitted = await asyncio.to_thread(spines.fit_external_spine, ctx, book_id, width, height)
+        return FileResponse(fitted, media_type="image/webp", headers=WEEK_CACHE)
     try:
         rendered = await spines.local_spine(ctx, book, width, height)
     except Exception as exc:
         raise HTTPException(404, "spine render failed") from exc
     if rendered is None:
         raise HTTPException(404, "no cached cover")
-    return FileResponse(rendered, media_type="image/png", headers=WEEK_CACHE)
+    return FileResponse(rendered, media_type="image/webp", headers=WEEK_CACHE)
 
 
 @router.get("/spine-queue")
@@ -90,7 +94,7 @@ async def put_spine_asset(
             raise HTTPException(422, "file must be a PNG under 3MB")
         ctx.settings.external_spines_dir.mkdir(parents=True, exist_ok=True)
         spines.external_spine_path(ctx, book_id).write_bytes(data)
-        for stale in ctx.settings.spines_dir.glob(f"{book_id}-external-*.png"):
+        for stale in ctx.settings.spines_dir.glob(f"{book_id}-external-*"):
             stale.unlink(missing_ok=True)
     updated = update_book(ctx.db, book_id, book["version"], changes)
     return {"book": updated, "effective": spines.effective_spine_source(ctx, updated)}

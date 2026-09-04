@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from ..books import ListFilter, all_tags, list_books, shelf_counts
+from ..books import ListFilter, all_tags, get_book, list_books, shelf_counts
 from ..config import SHELVES, STATUSES
 from ..context import AppContext
 from ..lookup import parse_lookup_envelope
@@ -95,4 +95,22 @@ async def index(
             "spine_rev": SPINE_REV,
             "features": ctx.settings.feature_flags(),
         },
+    )
+
+
+@router.get("/api/books/{book_id}/detail", response_class=HTMLResponse)
+async def book_detail(request: Request, book_id: int, ctx: AppContext = Depends(get_ctx)) -> HTMLResponse:
+    """A tile's detail block, rendered when the tile is first opened so the page itself stays light."""
+    book = decorate_for_view(ctx, get_book(ctx.db, book_id))
+    return templates.TemplateResponse(
+        request,
+        "detail.html",
+        {
+            "b": book,
+            "shelves": SHELVES,
+            "statuses": STATUSES,
+            "spine_rev": SPINE_REV,
+            "features": ctx.settings.feature_flags(),
+        },
+        headers={"Cache-Control": "no-store"},
     )

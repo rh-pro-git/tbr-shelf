@@ -56,6 +56,31 @@ def test_existing_values_are_never_overwritten() -> None:
     assert "cover" not in changes
 
 
+def test_refresh_replaces_catalog_fields_but_not_the_author_or_cover() -> None:
+    candidates = [
+        {
+            "title": "Dune", "author": "Frank Herbert", "year": 1965, "page_count": 412,
+            "physical_format": "Paperback", "cover": "https://new", "editions": 30, "source": "Open Library",
+            "asin": "B0DUNE0001", "minutes": 1265, "audible_cover": "https://aud",
+        },
+    ]  # fmt: skip
+    current = book(
+        year=2000, page_count=300, physical_format="Hardcover", cover="https://mine",
+        store_url="https://www.audible.com/pd/OLD", audiobook_length="1h 0m",
+    )  # fmt: skip
+    changes = lookup_changes(current, candidates, OK, refresh=True)
+    assert (changes["year"], changes["page_count"], changes["physical_format"]) == (1965, 412, "Paperback")
+    assert changes["store_url"].endswith("B0DUNE0001") and changes["audiobook_length"] == "21h 5m"
+    assert "cover" not in changes and "author" not in changes
+
+
+def test_refresh_never_blanks_a_field_the_catalogs_lack() -> None:
+    candidates = [{"title": "Dune", "author": "Frank Herbert", "editions": 1, "source": "s", "cover": ""}]
+    changes = lookup_changes(book(year=2000, page_count=300), candidates, OK, refresh=True)
+    assert changes["lookup_state"] == "ready"
+    assert "year" not in changes and "page_count" not in changes
+
+
 def test_author_conflict_parks_the_book_for_review() -> None:
     candidates = [{"title": "Dune", "author": "Someone Else", "editions": 1, "source": "s", "cover": ""}]
     changes = lookup_changes(book(), candidates, OK)

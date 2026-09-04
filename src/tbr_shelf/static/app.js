@@ -196,6 +196,7 @@ document.querySelectorAll('.book').forEach((tile) => {
     requestAnimationFrame(() => {
       if (!tile.closest('#shelf-modal')) tile.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
+    if (!tile.dataset.loaded) { tile.dataset.loaded = '1'; loadDetail(); }
   });
 
   const editedFields = () => {
@@ -210,19 +211,6 @@ document.querySelectorAll('.book').forEach((tile) => {
     try { await api(`/api/books/${id}`, 'PATCH', { version: version(), cover: url }); location.reload(); }
     catch (error) { reportFailure(error); }
   };
-
-  const quickStatus = tile.querySelector('[data-quick="status"]');
-  if (quickStatus) {
-    quickStatus.onchange = async () => {
-      try {
-        const { book } = await api(`/api/books/${id}`, 'PATCH', { version: version(), status: quickStatus.value });
-        tile.dataset.version = book.version;
-        const pill = tile.querySelector('.status-pill');
-        if (pill) pill.textContent = book.status;
-        say('Status saved');
-      } catch (error) { reportFailure(error); }
-    };
-  }
 
   const actions = {
     async save() {
@@ -283,6 +271,13 @@ document.querySelectorAll('.book').forEach((tile) => {
         pollThenReload(id, 'lookup_state', 'Lookup');
       });
     },
+    async refresh(button) {
+      await withBusyLabel(button, 'Refreshing…', async () => {
+        await api(`/api/books/${id}/refresh`, 'POST', { version: version() });
+        say('Refreshing from the catalogs…');
+        pollThenReload(id, 'lookup_state', 'Refresh');
+      });
+    },
     async summary(button) {
       await withBusyLabel(button, 'Summarizing…', async () => {
         await api(`/api/books/${id}/summary`, 'POST', { version: version() });
@@ -333,47 +328,81 @@ document.querySelectorAll('.book').forEach((tile) => {
     catch (error) { button.disabled = false; button.textContent = original; throw error; }
   }
 
-  tile.querySelectorAll('[data-a]').forEach((button) => {
-    button.onclick = async () => {
-      try { await actions[button.dataset.a](button); }
-      catch (error) { reportFailure(error); }
-    };
-  });
-
-  // Lookup candidates: cover strip and "use this match" choices, both rendered from the same JSON.
-  const candidateCovers = tile.querySelector('.covers[data-c]');
-  if (candidateCovers) {
+  // The detail block is fetched on first open (760 tiles × edit grid + spine panel made the page itself
+  // several megabytes), then wired exactly as a server-rendered one would be.
+  async function loadDetail() {
+    const detail = tile.querySelector('.detail');
     try {
-      const seen = new Set();
-      JSON.parse(candidateCovers.dataset.c).forEach((candidate) => {
-        [candidate.audible_cover, candidate.cover].forEach((url) => {
-          if (!url || seen.has(url)) return;
-          seen.add(url);
-          const source = url === candidate.audible_cover ? 'Audible' : candidate.source;
-          const editions = candidate.editions ? `, ${candidate.editions} editions` : '';
-          const title = `${candidate.title || ''} — ${candidate.author || 'unknown'} (${source}${editions})`;
-          candidateCovers.append(coverButton(url, title, () => setCover(url)));
-        });
-      });
-    } catch { /* malformed candidate JSON: leave the strip empty */ }
+      const response = await fetch(`/api/books/${id}/detail`);
+      if (!response.ok) throw new Error(`Could not load details (${response.status})`);
+      detail.outerHTML = await response.text();
+      bindDetail();
+    } catch (error) {
+      detail.textContent = '';
+      const warning = document.createElement('p');
+      warning.className = 'warn';
+      warning.textContent = error.message;
+      detail.append(warning);
+      delete tile.dataset.loaded;
+    }
   }
-  const choices = tile.querySelector('.choices[data-c]');
-  if (choices) {
-    try {
-      JSON.parse(choices.dataset.c).slice(0, 8).forEach((candidate) => {
-        const button = document.createElement('button');
-        const year = candidate.year ? ` (${candidate.year})` : '';
-        const editions = candidate.editions ? `, ${candidate.editions} ed.` : '';
-        button.textContent = `Use ${candidate.title} — ${candidate.author || 'unknown'}${year} [${candidate.source}${editions}]`;
-        button.onclick = async () => {
-          try {
-            await api(`/api/books/${id}/accept-candidate`, 'POST', { version: version(), candidate });
-            location.reload();
-          } catch (error) { reportFailure(error); }
-        };
-        choices.append(button);
-      });
-    } catch { /* malformed candidate JSON: leave the list empty */ }
+
+  function bindDetail() {
+    const quickStatus = tile.querySelector('[data-quick="status"]');
+    if (quickStatus) {
+      quickStatus.onchange = async () => {
+        try {
+          const { book } = await api(`/api/books/${id}`, 'PATCH', { version: version(), status: quickStatus.value });
+          tile.dataset.version = book.version;
+          const pill = tile.querySelector('.status-pill');
+          if (pill) pill.textContent = book.status;
+          say('Status saved');
+        } catch (error) { reportFailure(error); }
+      };
+    }
+
+    tile.querySelectorAll('[data-a]').forEach((button) => {
+      button.onclick = async () => {
+        try { await actions[button.dataset.a](button); }
+        catch (error) { reportFailure(error); }
+      };
+    });
+
+    // Lookup candidates: cover strip and "use this match" choices, both rendered from the same JSON.
+    const candidateCovers = tile.querySelector('.covers[data-c]');
+    if (candidateCovers) {
+      try {
+        const seen = new Set();
+        JSON.parse(candidateCovers.dataset.c).forEach((candidate) => {
+          [candidate.audible_cover, candidate.cover].forEach((url) => {
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            const source = url === candidate.audible_cover ? 'Audible' : candidate.source;
+            const editions = candidate.editions ? `, ${candidate.editions} editions` : '';
+            const title = `${candidate.title || ''} — ${candidate.author || 'unknown'} (${source}${editions})`;
+            candidateCovers.append(coverButton(url, title, () => setCover(url)));
+          });
+        });
+      } catch { /* malformed candidate JSON: leave the strip empty */ }
+    }
+    const choices = tile.querySelector('.choices[data-c]');
+    if (choices) {
+      try {
+        JSON.parse(choices.dataset.c).slice(0, 8).forEach((candidate) => {
+          const button = document.createElement('button');
+          const year = candidate.year ? ` (${candidate.year})` : '';
+          const editions = candidate.editions ? `, ${candidate.editions} ed.` : '';
+          button.textContent = `Use ${candidate.title} — ${candidate.author || 'unknown'}${year} [${candidate.source}${editions}]`;
+          button.onclick = async () => {
+            try {
+              await api(`/api/books/${id}/accept-candidate`, 'POST', { version: version(), candidate });
+              location.reload();
+            } catch (error) { reportFailure(error); }
+          };
+          choices.append(button);
+        });
+      } catch { /* malformed candidate JSON: leave the list empty */ }
+    }
   }
 });
 
@@ -525,6 +554,15 @@ document.querySelectorAll('.book').forEach((tile) => {
   try { colorCache = JSON.parse(localStorage.getItem('rt-spine-colors') || '{}'); } catch { /* fresh cache */ }
   const saveColors = () => { try { localStorage.setItem('rt-spine-colors', JSON.stringify(colorCache)); } catch { /* quota */ } };
 
+  // Spine images load as they scroll into view; loading all of them up front was the whole shelf payload.
+  const lazySpines = window.IntersectionObserver
+    ? new IntersectionObserver((entries) => entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      lazySpines.unobserve(entry.target);
+      entry.target.loadSpineImage();
+    }), { rootMargin: '600px 0px' })
+    : null;
+
   const hash = (text) => { let x = 0; for (let i = 0; i < text.length; i++) x = (x * 31 + text.charCodeAt(i)) >>> 0; return x; };
   const hoursOf = (text) => {
     const h = /(\d+)\s*h/i.exec(text || '');
@@ -603,7 +641,7 @@ document.querySelectorAll('.book').forEach((tile) => {
       } catch { callback(null); } // a cross-origin (uncached) cover taints the canvas: caller falls back
     };
     image.onerror = () => callback(null);
-    image.src = `/api/books/${id}/cover?v=${version}`;
+    image.src = `/api/books/${id}/cover?w=200&v=${version}`;
   }
 
   function makeSpine(tile) {
@@ -623,26 +661,30 @@ document.querySelectorAll('.book').forEach((tile) => {
     spine.innerHTML = '<span class="ribbon"></span><span class="thumb"><img alt="" loading="lazy"></span>'
       + '<span class="lbl"><span class="t"></span><span class="a"></span></span><span class="band"></span>';
     const thumb = spine.querySelector('.thumb img');
-    thumb.src = `/api/books/${tile.dataset.id}/cover?v=${tile.dataset.version}`;
+    thumb.src = `/api/books/${tile.dataset.id}/cover?w=200&v=${tile.dataset.version}`;
     thumb.onerror = () => thumb.parentNode.remove();
     spine.querySelector('.t').textContent = tile.dataset.title;
     spine.querySelector('.a').textContent = tile.dataset.author;
     // Prefer the server-rendered spine image; fall back to a colour sampled from the cover.
-    const image = new Image();
-    image.onload = () => { spine.style.backgroundImage = `url("${image.src}")`; spine.classList.add('img'); };
-    image.onerror = () => sampleCover(tile.dataset.id, tile.dataset.version, (rgb) => {
-      if (!rgb) return;
-      spine.style.setProperty('--spine', `rgb(${rgb})`);
-      spine.classList.remove('light', 'dark');
-      spine.classList.add(textClass(rgb));
-    });
-    image.src = `/api/books/${tile.dataset.id}/spine?w=${w}&h=${h}&v=${tile.dataset.version}`
-      + `&r=${shelf.dataset.spineRev || 0}&s=${tile.dataset.spineSrc || ''}`;
+    spine.loadSpineImage = () => {
+      const image = new Image();
+      image.onload = () => { spine.style.backgroundImage = `url("${image.src}")`; spine.classList.add('img'); };
+      image.onerror = () => sampleCover(tile.dataset.id, tile.dataset.version, (rgb) => {
+        if (!rgb) return;
+        spine.style.setProperty('--spine', `rgb(${rgb})`);
+        spine.classList.remove('light', 'dark');
+        spine.classList.add(textClass(rgb));
+      });
+      image.src = `/api/books/${tile.dataset.id}/spine?w=${w}&h=${h}&v=${tile.dataset.version}`
+        + `&r=${shelf.dataset.spineRev || 0}&s=${tile.dataset.spineSrc || ''}`;
+    };
+    if (lazySpines) lazySpines.observe(spine); else spine.loadSpineImage();
     spine.onclick = () => pullOut(tile);
     return spine;
   }
 
   function build() {
+    if (lazySpines) lazySpines.disconnect();
     shelf.innerHTML = '';
     if (!tiles.length) { shelf.innerHTML = '<p class="shelf-empty">No books found.</p>'; return; }
     const groups = new Map();

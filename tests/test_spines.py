@@ -10,10 +10,10 @@ from tbr_shelf.spines import RENDER_SCALE, effective_spine_source, render_spine
 from tests.conftest import add_book, png_bytes
 
 
-def test_render_spine_produces_png_at_render_scale() -> None:
-    png = render_spine(png_bytes(), "A Very Long Title That Needs Wrapping", "Some Author", 48, 190)
-    image = Image.open(io.BytesIO(png))
-    assert image.format == "PNG"
+def test_render_spine_produces_webp_at_render_scale() -> None:
+    rendered = render_spine(png_bytes(), "A Very Long Title That Needs Wrapping", "Some Author", 48, 190)
+    image = Image.open(io.BytesIO(rendered))
+    assert image.format == "WEBP"
     assert image.size == (48 * RENDER_SCALE, 190 * RENDER_SCALE)
 
 
@@ -36,7 +36,7 @@ def test_spine_endpoint_needs_a_cached_cover(client: TestClient, ctx: AppContext
     ctx.settings.covers_dir.mkdir(parents=True)
     cover_path(ctx, book["id"]).write_bytes(png_bytes())
     response = client.get(f"/api/books/{book['id']}/spine?w=40&h=160")
-    assert response.status_code == 200 and response.headers["content-type"] == "image/png"
+    assert response.status_code == 200 and response.headers["content-type"] == "image/webp"
     assert Image.open(io.BytesIO(response.content)).size == (40 * RENDER_SCALE, 160 * RENDER_SCALE)
     assert client.get(f"/api/books/{book['id']}/spine?w=1&h=9999").status_code == 200  # clamped, not rejected
 
@@ -52,12 +52,27 @@ def test_external_spine_asset_round_trip(client: TestClient) -> None:
     assert response.status_code == 200, response.text
     assert response.json()["effective"] == "external"
     served = client.get(f"/api/books/{book['id']}/spine?w=30&h=240")
-    assert served.status_code == 200
+    assert served.status_code == 200 and served.headers["content-type"] == "image/webp"
     assert Image.open(io.BytesIO(served.content)).size == (30 * RENDER_SCALE, 240 * RENDER_SCALE)
-    page = client.get("/").text
-    assert "photo-informed" in page and "9.5 × 1.2 in" in page  # noqa: RUF001
+    detail = client.get(f"/api/books/{book['id']}/detail").text
+    assert "photo-informed" in detail and "9.5 × 1.2 in" in detail  # noqa: RUF001
     queue = client.get("/api/spine-queue").json()["books"]
     assert queue == []
+
+
+def test_external_spine_fits_keep_every_requested_size(client: TestClient, ctx: AppContext) -> None:
+    book = add_book(client)
+    client.put(
+        f"/api/books/{book['id']}/spine-asset",
+        data={"meta": json.dumps({"height_in": 9.0, "thickness_in": 1.0})},
+        files={"file": ("spine.png", png_bytes(120, 950), "image/png")},
+    )
+    for size in ("w=30&h=240", "w=40&h=300", "w=30&h=240"):
+        assert client.get(f"/api/books/{book['id']}/spine?{size}").status_code == 200
+    fits = sorted(path.name for path in ctx.settings.spines_dir.glob(f"{book['id']}-external-*"))
+    assert [name.split("-")[2] for name in fits] == ["30x240", "40x300"]
+    assert all(name.endswith(".webp") for name in fits)
+    assert not list(ctx.settings.spines_dir.glob("*.tmp"))
 
 
 def test_external_spine_asset_validation(client: TestClient) -> None:

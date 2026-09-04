@@ -3,6 +3,10 @@
 Lookup never overwrites what the reader typed. It fills blanks, and when the
 evidence is ambiguous (no exact match, or an author conflict) it parks the book
 in a `verify` state for a human to resolve instead of guessing.
+
+Refresh is the one explicit exception: the same pipeline with `refresh=True`
+replaces the source-derived fields with what the catalogs say now. It still never
+blanks a field, never touches the author rule, and never swaps the chosen cover.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from .text import audible_product_url, is_asin, match_key
 log = logging.getLogger(__name__)
 
 FILLABLE_FROM_MATCH = ("author", "year", "page_count", "physical_format")
+REFRESHABLE = ("year", "page_count", "physical_format")  # author stays blank-fill even on refresh
 
 
 def parse_lookup_envelope(raw: str | None) -> dict:
@@ -40,8 +45,12 @@ def author_conflict(book: dict, best: dict | None) -> list[dict]:
     return [{"field": "author", "current": book["author"], "candidate": best["author"]}]
 
 
-def lookup_changes(book: dict, candidates: list[dict], sources: dict[str, str]) -> dict:
-    """Pure decision: given what the catalogs returned, what should change on the book."""
+def lookup_changes(
+    book: dict, candidates: list[dict], sources: dict[str, str], *, refresh: bool = False
+) -> dict:
+    """Pure decision: given what the catalogs returned, what should change on the book.
+
+    With `refresh`, fields the catalogs own are replaced when the match has a value for them."""
     best = catalogs.match_exact(book, candidates)
     conflicts = author_conflict(book, best)
     changes: dict = {
@@ -57,19 +66,20 @@ def lookup_changes(book: dict, candidates: list[dict], sources: dict[str, str]) 
     else:
         changes["lookup_state"] = "ready"
         for field in FILLABLE_FROM_MATCH:
-            if not book.get(field) and best.get(field):
+            replace = refresh and field in REFRESHABLE
+            if best.get(field) and (replace or not book.get(field)):
                 changes[field] = best[field]
 
     audible = catalogs.match_exact(book, [c for c in candidates if c.get("asin")])
     if audible:
-        if book["shelf"] in ("Audible", "Wishlist") and not book.get("store_url"):
+        if book["shelf"] in ("Audible", "Wishlist") and (refresh or not book.get("store_url")):
             changes["store_url"] = audible_product_url(audible["asin"])
-        if audible.get("minutes") and not book.get("audiobook_length"):
+        if audible.get("minutes") and (refresh or not book.get("audiobook_length")):
             changes["audiobook_length"] = catalogs.runtime_text(audible)
         if (
             changes["lookup_state"] == "ready"
             and "year" not in changes
-            and not book.get("year")
+            and (refresh or not book.get("year"))
             and audible.get("year")
         ):
             changes["year"] = audible["year"]
@@ -84,15 +94,19 @@ def lookup_changes(book: dict, candidates: list[dict], sources: dict[str, str]) 
     return changes
 
 
-async def run_lookup(ctx: AppContext, book_id: int) -> None:
+async def run_lookup(ctx: AppContext, book_id: int, refresh: bool = False) -> None:
     book = get_book(ctx.db, book_id)
     try:
         candidates, sources = await catalogs.search_candidates(book["title"], book["author"])
-        changes = lookup_changes(book, candidates, sources)
+        changes = lookup_changes(book, candidates, sources, refresh=refresh)
         update_book(ctx.db, book_id, book["version"], changes)
         if "cover" in changes:
             drop_cover_cache(ctx, book_id)
             await cache_cover(ctx, book_id)
+        elif refresh:
+            await cache_cover(
+                ctx, book_id
+            )  # same URL: fetched first, so a failed download keeps the old copy
     except Exception as exc:
         log.warning("lookup failed for book %s: %s", book_id, exc)
         update_book_latest(ctx.db, book_id, {"lookup_state": "failed"})

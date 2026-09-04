@@ -19,7 +19,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .context import AppContext
-from .covers import cover_path
+from .covers import atomic_target, cover_path
 
 FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
     "bold": (
@@ -36,6 +36,7 @@ FONT_CANDIDATES: dict[str, tuple[str, ...]] = {
     ),
 }
 RENDER_SCALE = 3
+SPINE_QUALITY = 85  # WebP quality for every served spine; the external PNG source is never re-encoded
 SPINE_REV = 3  # bump on renderer changes; it is part of the cache key and the image URL
 
 MIN_W, MAX_W = 24, 240
@@ -70,15 +71,18 @@ def effective_spine_source(ctx: AppContext, book: dict) -> str:
 
 def fit_external_spine(ctx: AppContext, book_id: int, css_w: int, css_h: int) -> Path:
     """Serve the external asset at display size. The stored PNG can be a multi-megabyte raster
-    and the shelf paints it into a ~60x200 box, so cache a 3x-of-CSS cover-fit crop instead."""
+    and the shelf paints it into a ~60x200 box, so cache a 3x-of-CSS cover-fit crop as WebP.
+    Every requested size is kept; only variants of a superseded source are evicted."""
     source = external_spine_path(ctx, book_id)
     spines_dir = ctx.settings.spines_dir
-    target = spines_dir / f"{book_id}-external-{css_w}x{css_h}-{int(source.stat().st_mtime)}.png"
+    mtime = int(source.stat().st_mtime)
+    target = spines_dir / f"{book_id}-external-{css_w}x{css_h}-{mtime}.webp"
     if target.exists():
         return target
     spines_dir.mkdir(parents=True, exist_ok=True)
-    for stale in spines_dir.glob(f"{book_id}-external-*.png"):
-        stale.unlink(missing_ok=True)
+    for stale in spines_dir.glob(f"{book_id}-external-*"):
+        if not stale.stem.endswith(f"-{mtime}"):
+            stale.unlink(missing_ok=True)
     width, height = css_w * RENDER_SCALE, css_h * RENDER_SCALE
     image = Image.open(source).convert("RGB")
     scale = max(width / image.width, height / image.height)
@@ -86,7 +90,10 @@ def fit_external_spine(ctx: AppContext, book_id: int, css_w: int, css_h: int) ->
         (max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.LANCZOS
     )
     left, top = (image.width - width) // 2, (image.height - height) // 2
-    image.crop((left, top, left + width, top + height)).save(target, optimize=True)
+    with atomic_target(target) as temp:
+        image.crop((left, top, left + width, top + height)).save(
+            temp, "WEBP", quality=SPINE_QUALITY, method=4
+        )
     return target
 
 
@@ -97,18 +104,17 @@ async def local_spine(ctx: AppContext, book: dict, css_w: int, css_h: int) -> Pa
         return None
     identity = hashlib.md5(f"{book['title']}|{book['author']}".encode()).hexdigest()[:8]
     key = f"{book['id']}-{css_w}x{css_h}-r{SPINE_REV}-{int(cover.stat().st_mtime)}-{identity}"
-    target = ctx.settings.spines_dir / f"{key}.png"
+    target = ctx.settings.spines_dir / f"{key}.webp"
     if target.exists():
         return target
     ctx.settings.spines_dir.mkdir(parents=True, exist_ok=True)
-    for stale in ctx.settings.spines_dir.glob(f"{book['id']}-{css_w}x{css_h}-*.png"):
+    for stale in ctx.settings.spines_dir.glob(f"{book['id']}-{css_w}x{css_h}-*.webp"):
         stale.unlink(missing_ok=True)
-    png = await asyncio.to_thread(
+    rendered = await asyncio.to_thread(
         render_spine, cover.read_bytes(), book["title"], book["author"], css_w, css_h
     )
-    partial = target.with_suffix(".tmp")
-    partial.write_bytes(png)
-    partial.replace(target)
+    with atomic_target(target) as temp:
+        Path(temp).write_bytes(rendered)
     return target
 
 
@@ -245,5 +251,5 @@ def render_spine(cover_bytes: bytes, title: str, author: str, css_w: int, css_h:
         base.alpha_composite(label.rotate(-90, expand=True), (0, label_top))
 
     out = io.BytesIO()
-    base.convert("RGB").save(out, "PNG", optimize=True)
+    base.convert("RGB").save(out, "WEBP", quality=SPINE_QUALITY, method=4)
     return out.getvalue()

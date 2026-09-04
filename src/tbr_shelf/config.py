@@ -59,6 +59,10 @@ class Settings:
         return self.data_dir / "covers"
 
     @property
+    def cover_fits_dir(self) -> Path:
+        return self.data_dir / "covers" / "fit"
+
+    @property
     def spines_dir(self) -> Path:
         return self.data_dir / "spines"
 

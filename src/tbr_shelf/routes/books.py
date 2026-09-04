@@ -147,6 +147,17 @@ async def lookup(
     return {"message": "Lookup queued"}
 
 
+@router.post("/{book_id}/refresh")
+async def refresh(
+    book_id: int, payload: VersionAction, bg: BackgroundTasks, ctx: AppContext = Depends(get_ctx)
+) -> dict:
+    """Re-fetch from the catalogs and replace the source-derived fields (year, pages, format, length,
+    store link), then re-download the cover and purge its cached variants."""
+    update_book(ctx.db, book_id, payload.version, {"lookup_state": "queued"})
+    bg.add_task(run_lookup, ctx, book_id, True)
+    return {"message": "Refresh queued"}
+
+
 @router.post("/{book_id}/accept-candidate")
 async def accept_candidate(
     book_id: int, payload: CandidateAccept, bg: BackgroundTasks, ctx: AppContext = Depends(get_ctx)

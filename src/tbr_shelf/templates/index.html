@@ -89,7 +89,7 @@
 {% for b in books %}
 <details class="book" name="book" data-id="{{ b.id }}" data-version="{{ b.version }}" data-shelf="{{ b.shelf }}" data-lookup="{{ b.lookup_state }}" data-summary="{{ b.summary_state }}" data-title="{{ b.title }}" data-author="{{ b.author }}" data-status="{{ b.status }}" data-len="{{ b.audiobook_length or '' }}" data-pages="{{ b.page_count or '' }}" data-format="{{ b.physical_format or '' }}" data-spine-src="{{ b.spine_src }}" data-spine-h="{{ b.spine_h_in or '' }}" data-spine-t="{{ b.spine_t_in or '' }}" data-spine-state="{{ b.spine_state }}">
   <summary>
-    <div class="cover"><img src="/api/books/{{ b.id }}/cover?v={{ b.version }}" onerror="this.src='/static/cover.svg'" loading="lazy" alt=""></div>
+    <div class="cover"><img src="/api/books/{{ b.id }}/cover?w=200&v={{ b.version }}" onerror="this.src='/static/cover.svg'" loading="lazy" alt=""></div>
     <div class="browse-main">
       <p class="browse-title">{{ b.title }}</p>
       <p class="browse-author">{{ b.author or 'Unknown author' }}</p>
@@ -99,105 +99,7 @@
     <span class="status-pill">{{ b.status }}</span>
     <span class="chev">&rsaquo;</span>
   </summary>
-  <div class="detail">
-    <div class="detail-top">
-      <div class="bigcover"><a href="/api/books/{{ b.id }}/cover?v={{ b.version }}" target="_blank" rel="noopener"><img src="/api/books/{{ b.id }}/cover?v={{ b.version }}" onerror="this.src='/static/cover.svg'" loading="lazy" alt="Cover"></a></div>
-      <div class="info">
-        <h2>{{ b.title }}</h2>
-        <p class="byline">{{ b.author or 'Unknown author' }}{% if b.series %} &middot; {{ b.series }}{% endif %}</p>
-        <dl class="facts">
-          <div><dt>Shelf</dt><dd>{{ b.shelf }}</dd></div>
-          <div><dt>Status</dt><dd><select data-quick="status" aria-label="Status">{% for x in statuses %}<option {{ 'selected' if b.status == x }}>{{ x }}</option>{% endfor %}{% if b.status == 'Archived' %}<option selected>Archived</option>{% endif %}</select></dd></div>
-          {% if b.year %}<div><dt>Year</dt><dd>{{ b.year }}</dd></div>{% endif %}
-          {% if b.page_count %}<div><dt>Pages</dt><dd>{{ b.page_count }}</dd></div>{% endif %}
-          {% if b.physical_format %}<div><dt>Format</dt><dd>{{ b.physical_format }}</dd></div>{% endif %}
-          {% if b.spine_h_in and b.spine_t_in %}<div><dt>Size</dt><dd>{{ b.spine_h_in }} × {{ b.spine_t_in }} in</dd></div>{% endif %}
-          {% if b.audiobook_length %}<div><dt>Length</dt><dd>{{ b.audiobook_length }}</dd></div>{% endif %}
-          <div><dt>Added</dt><dd>{{ b.date_added }}</dd></div>
-          {% if b.started_at %}<div><dt>Started</dt><dd>{{ b.started_at }}</dd></div>{% endif %}
-          {% if b.finished_at %}<div><dt>Finished</dt><dd>{{ b.finished_at }}</dd></div>{% endif %}
-        </dl>
-        <div class="chips">{% for t in b.tags.split(',') if t.strip() %}<a class="chip" href="/?tag={{ t.strip()|urlencode }}">{{ t.strip() }}</a>{% endfor %}</div>
-        <div class="chips storelinks">
-          {% set sq = (b.title ~ ' ' ~ b.author)|urlencode %}
-          {% if b.shelf == 'Chirp' %}<a class="chip store" href="https://www.chirpbooks.com/library" target="_blank" rel="noopener">Open Chirp library &#8599;</a>{% endif %}
-          {% if b.store_url %}<a class="chip store" href="{{ b.store_url }}" target="_blank" rel="noopener">{{ 'Buy' if b.shelf == 'Wishlist' else 'Open' }} on {{ 'Audible' if 'audible.' in b.store_url else 'Chirp' if 'chirpbooks.' in b.store_url else 'store' }} &#8599;</a>
-          {% elif b.shelf in ['Audible', 'Wishlist'] %}<a class="chip store" href="https://www.audible.com/search?keywords={{ sq }}" target="_blank" rel="noopener">Find on Audible &#8599;</a>{% endif %}
-          {% if b.shelf == 'Wishlist' %}<a class="chip store" href="https://www.chirpbooks.com/search?query={{ sq }}" target="_blank" rel="noopener">Find on Chirp &#8599;</a>{% endif %}
-        </div>
-        {% if b.notes %}<p class="notes-view">{{ b.notes }}</p>{% endif %}
-      </div>
-    </div>
-
-    {% if features.llm or b.summary %}
-    <div class="summary-box">
-      <b>Spoiler-free summary</b>
-      <p>{{ b.summary or ('Preparing…' if b.summary_state in ['none', 'queued'] else 'Unavailable — retry below.') }}</p>
-      <div class="actions">
-        {% if features.tts and b.summary %}<button data-a="listen">Listen</button>{% endif %}
-        {% if features.llm %}
-        <button data-a="similar">Similar books</button>
-        <button data-a="summary">{{ 'Retry summary' if b.summary_state in ['failed', 'unavailable'] else 'Refresh summary' }}</button>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
-
-    <details class="subpanel spinepanel"><summary>Spine {% if b.spine_state == 'queued' %}&middot; <span class="working">queued for the external generator…</span>{% elif b.spine_meta_d %}&middot; {{ 'external · photo-informed' if b.spine_kind == 'photo' else 'external · cover-informed' if b.spine_kind == 'generated' else 'local render' }}{% endif %}</summary>
-      {% if b.spine_meta_d %}<p class="lookup-note">{{ b.spine_meta_d.source_type or 'unknown' }} &middot; {{ b.spine_meta_d.confidence or '' }}{% if b.spine_meta_d.edition %}<br>{{ b.spine_meta_d.edition }}{% if b.spine_meta_d.isbn %} &middot; ISBN {{ b.spine_meta_d.isbn }}{% endif %}{% endif %}{% if b.spine_meta_d.notes %}<br>{{ b.spine_meta_d.notes|truncate(200) }}{% endif %}</p>
-      <div class="spine-compare">
-        <figure><a href="/api/books/{{ b.id }}/spine?w=48&h=190&v={{ b.version }}&r={{ spine_rev }}&src=local" target="_blank" rel="noopener"><img src="/api/books/{{ b.id }}/spine?w=48&h=190&v={{ b.version }}&r={{ spine_rev }}&src=local" alt="Local spine"></a><figcaption>local</figcaption></figure>
-        {% if b.spine_state == 'ready' %}<figure><a href="/api/books/{{ b.id }}/spine?w=48&h=190&v={{ b.version }}&r={{ spine_rev }}&src=external" target="_blank" rel="noopener"><img src="/api/books/{{ b.id }}/spine?w=48&h=190&v={{ b.version }}&r={{ spine_rev }}&src=external" alt="External spine"></a><figcaption>external</figcaption></figure>{% endif %}
-      </div>{% endif %}
-      <div class="actions">
-        {% if b.spine_meta_d and b.spine_state == 'ready' %}<button data-a="spine-pref" data-pref="external" {{ 'disabled' if b.spine_src == 'external' }}>Use external spine</button><button data-a="spine-pref" data-pref="local" {{ 'disabled' if b.spine_src == 'local' }}>Use local spine</button>{% endif %}
-        <button data-a="spine-regen" {{ 'disabled' if b.spine_state == 'queued' }}>{{ 'Request' if not b.spine_meta_d else 'Regenerate' }} external spine</button>
-      </div>
-    </details>
-    <div class="actions">
-      <button data-a="lookup">Re-lookup</button>
-      <button data-a="altcovers">Change cover</button>
-      {% if archived %}<button data-a="restore">Restore</button><button data-a="delete">Delete permanently</button>{% else %}<button data-a="archive">Archive</button>{% endif %}
-    </div>
-    <div class="covers altcovers-host"></div>
-
-    {% if b.lookup_state == 'queued' %}<p class="lookup-note working">Looking up metadata…</p>
-    {% elif b.lookup_state == 'failed' %}<p class="warn">Lookup failed{% if b.src_errors %} — {{ b.src_errors }}{% endif %}. Try again.</p>
-    {% elif b.lookup_state == 'not_found' %}<p class="lookup-note">Sources responded, but no metadata match.</p>
-    {% elif b.lookup_state == 'ready' and b.checked_at %}<p class="lookup-note">Metadata matched &middot; checked {{ b.checked_at[:10] }}{% if b.src_errors %} &middot; {{ b.src_errors }}{% endif %}</p>{% endif %}
-    {% if b.lookup_state == 'verify' %}
-    <div class="verifybox">
-      <b>Verify metadata</b>
-      {% if b.conflicts %}{% for c in b.conflicts %}<p>Best match {{ c.field }} is &ldquo;{{ c.candidate }}&rdquo; but this entry says &ldquo;{{ c.current }}&rdquo;. Apply a choice below, or dismiss.</p>{% endfor %}
-      {% else %}<p>No confident match &mdash; {{ b.cands|length }} possibilit{{ 'y' if b.cands|length == 1 else 'ies' }} found. Pick one below, or dismiss.</p>{% endif %}
-      <div class="actions"><button data-a="confirm-lookup">Looks right — dismiss</button></div>
-    </div>
-    {% endif %}
-    {% if b.cands %}
-    <details class="subpanel" {{ 'open' if b.lookup_state == 'verify' }}><summary>Metadata &amp; covers — confirm before applying</summary>
-      <div class="covers" data-c="{{ b.cands_json }}"></div>
-      <div class="choices" data-c="{{ b.cands_json }}"></div>
-    </details>
-    {% endif %}
-
-    <details class="subpanel editpanel"><summary>Edit details</summary>
-      <div class="edit-grid">
-        <input data-field="title" value="{{ b.title }}" placeholder="Title" aria-label="Title">
-        <input data-field="author" value="{{ b.author }}" placeholder="Author" aria-label="Author">
-        <input data-field="series" placeholder="Series" value="{{ b.series or '' }}" aria-label="Series">
-        <select data-field="shelf" aria-label="Shelf">{% for x in shelves %}<option {{ 'selected' if b.shelf == x }}>{{ x }}</option>{% endfor %}</select>
-        <input data-field="tags" placeholder="tags, commas" value="{{ b.tags }}" aria-label="Tags">
-        <input data-field="audiobook_length" placeholder="Length (e.g. 11h 5m)" value="{{ b.audiobook_length or '' }}" aria-label="Audiobook length">
-        <input data-field="page_count" type="number" min="1" placeholder="Pages" value="{{ b.page_count or '' }}" aria-label="Pages">
-        <select data-field="physical_format" aria-label="Print format"><option value="">Format (print)</option>{% for x in ['Hardcover', 'Paperback', 'Mass Market'] %}<option {{ 'selected' if b.physical_format == x }}>{{ x }}</option>{% endfor %}</select>
-        <input data-field="store_url" placeholder="Store URL (https://…)" value="{{ b.store_url or '' }}" aria-label="Store URL">
-        <label class="dfield">Started<input type="date" data-field="started_at" value="{{ b.started_at or '' }}"></label>
-        <label class="dfield">Finished<input type="date" data-field="finished_at" value="{{ b.finished_at or '' }}"></label>
-        <textarea data-field="notes" placeholder="Notes" aria-label="Notes">{{ b.notes }}</textarea>
-      </div>
-      <div class="actions"><button data-a="save">Save</button></div>
-    </details>
-  </div>
+  <div class="detail"><p class="lookup-note working">Loading…</p></div>
 </details>
 {% else %}<p class="empty">No books found.</p>{% endfor %}
 </main>

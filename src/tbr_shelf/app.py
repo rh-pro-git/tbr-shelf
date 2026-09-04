@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from . import net
 from .books import BookNotFound, VersionConflict
@@ -24,6 +28,25 @@ from .speech import SpeechUnavailable
 log = logging.getLogger(__name__)
 
 COVER_SWEEP_PAUSE_S = 0.3
+GZIP_MIN_BYTES = 1024
+
+
+class CachedStatic(StaticFiles):
+    """Versioned assets (`?v=<mtime>`) are immutable for a year; the unversioned icons and manifest, a day."""
+
+    def file_response(
+        self,
+        full_path: os.PathLike[str] | str,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        versioned = b"v=" in scope.get("query_string", b"")
+        response.headers["Cache-Control"] = (
+            "public, max-age=31536000, immutable" if versioned else "public, max-age=86400"
+        )
+        return response
 
 
 def reset_orphaned_states(ctx: AppContext) -> None:
@@ -64,7 +87,10 @@ def create_app(settings: Settings | None = None, *, sweep_covers: bool = True) -
 
     app = FastAPI(title="TBR Shelf", lifespan=lifespan)
     app.state.ctx = ctx
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.add_middleware(
+        GZipMiddleware, minimum_size=GZIP_MIN_BYTES, compresslevel=6
+    )  # images are excluded by type
+    app.mount("/static", CachedStatic(directory=str(STATIC_DIR)), name="static")
     for router in (pages.router, books.router, media.router, imports.router, voice.router):
         app.include_router(router)
 
