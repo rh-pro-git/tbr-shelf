@@ -21,7 +21,10 @@ and the tracker is complete without any of them.
   Google Books and the Audible catalog in parallel. Blank fields are filled;
   existing ones are left alone. When the catalogs disagree with what you typed
   or can't find an exact match, the book is flagged for review with the
-  candidates attached, and you pick.
+  candidates attached, and you pick. When you *want* the catalogs' current
+  values, **Refresh data** on a book replaces its year, pages, format, runtime
+  and store link, re-downloads the cover and rebuilds the cached sizes. It still
+  never touches your title, tags, notes, or the cover you chose.
 - **Covers are yours to choose.** The first cover is proposed once. After that,
   "Change cover" shows every candidate and every edition Open Library knows for
   the work, and you click the one you like.
@@ -47,6 +50,11 @@ and the tracker is complete without any of them.
   Audible library that resolves each book by ASIN from the keyless catalog API,
   so 700 books arrive verified, with runtime, categories, cover art and the
   publisher's own summary, and queue zero background jobs.
+- **Light on the wire.** The page ships one summary row per book and fetches
+  the full record when you open it. Covers and spines are served as right-sized
+  WebP derivatives cached beside the originals (the source files are never
+  re-encoded), shelf spines load as they scroll into view, and responses are
+  gzipped. A 760-book library opens at about 60 KB of HTML.
 - **Safe to use from three devices at once.** Every write carries the version
   it read; a stale write gets a 409 and a reload prompt instead of clobbering a
   concurrent edit. Installable as a PWA on iOS and Android.
@@ -200,9 +208,12 @@ module map and the decisions behind it.
 
 ## Limitations
 
-- The main page renders every book in one server-rendered document. It is
-  instant at a few hundred books; at ~760 the HTML weighs several megabytes and a
-  phone notices. Pagination is the obvious next step and has not been built.
+- The main page is still one server-rendered document: the shelf is built in
+  the browser from every book's tile, so every book is on the page. Each tile is
+  only a summary row (its detail is fetched on open), which keeps a 760-book
+  library at ~60 KB gzipped; it has not been tried in the thousands.
+- **Refresh data** is per book. There is no library-wide refresh; a batch of
+  hundreds of lookups would need throttling against Open Library.
 - No authentication (see above).
 - Google Books is rate-limited for keyless callers and frequently contributes
   nothing; Open Library and the Audible catalog carry the lookup.
