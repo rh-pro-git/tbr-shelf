@@ -71,23 +71,23 @@
 </div>
 
 <nav>
-  {% for x in ['All'] + shelves|list %}<a class="{{ 'on' if shelf == x and not archived }}" href="/?shelf={{ x }}">{{ x }}{% if x != 'All' %} ({{ counts.get(x, 0) }}){% endif %}</a>{% endfor %}<a class="{{ 'on' if archived }}" href="/?archived=1">Archive</a>
+  {% for x in ['All', 'TBR'] + shelves|list %}<a class="{{ 'on' if shelf == x and not archived }}" href="/?shelf={{ x }}">{{ x }}{% if x != 'All' %} ({{ counts.get(x, 0) }}){% endif %}</a>{% endfor %}<a class="{{ 'on' if archived }}" href="/?archived=1">Archive</a>
 </nav>
 
+<div class="searchbar"><span class="search"><input form="filters" name="q" value="{{ q }}" placeholder="Search title, author, series or tag" autocomplete="off" aria-label="Search"><button type="button" class="clear" aria-label="Clear search" {{ 'hidden' if not q }}>&times;</button></span></div>
 <button type="button" id="filtersToggle" class="filters-toggle" aria-expanded="false" aria-controls="filters" hidden>Filters <span class="fcount"></span></button>
 <form class="filters" id="filters">
   <input type="hidden" name="archived" value="{{ archived }}">
-  <input name="q" value="{{ q }}" placeholder="Search" aria-label="Search">
   <select name="shelf" aria-label="Shelf"><option>All</option>{% for x in shelves %}<option {{ 'selected' if shelf == x }}>{{ x }}</option>{% endfor %}</select>
   <select name="status" aria-label="Status"><option value="">Any status</option>{% for x in statuses %}<option {{ 'selected' if status == x }}>{{ x }}</option>{% endfor %}</select>
-  <select name="tag" aria-label="Tag"><option value="">Any tag</option>{% for x in tags %}<option {{ 'selected' if tag == x }}>{{ x }}</option>{% endfor %}</select>
+  <input name="tag" list="taglist" value="{{ tag }}" placeholder="Any tag" autocomplete="off" aria-label="Tag"><datalist id="taglist">{% for x in tags %}<option value="{{ x }}">{% endfor %}</datalist>
   <select name="sort" aria-label="Sort">{% for key, label in sort_labels %}<option value="{{ key }}" {{ 'selected' if sort == key }}>{{ label }}</option>{% endfor %}</select>
   <button>Filter</button>
 </form>
 
 <main>
 {% for b in books %}
-<details class="book" name="book" data-id="{{ b.id }}" data-version="{{ b.version }}" data-shelf="{{ b.shelf }}" data-lookup="{{ b.lookup_state }}" data-summary="{{ b.summary_state }}" data-title="{{ b.title }}" data-author="{{ b.author }}" data-status="{{ b.status }}" data-len="{{ b.audiobook_length or '' }}" data-pages="{{ b.page_count or '' }}" data-format="{{ b.physical_format or '' }}" data-spine-src="{{ b.spine_src }}" data-spine-h="{{ b.spine_h_in or '' }}" data-spine-t="{{ b.spine_t_in or '' }}" data-spine-state="{{ b.spine_state }}">
+<details class="book" name="book" data-id="{{ b.id }}" data-version="{{ b.version }}" data-shelf="{{ b.shelf }}" data-lookup="{{ b.lookup_state }}" data-summary="{{ b.summary_state }}" data-title="{{ b.title }}" data-author="{{ b.author }}" data-status="{{ b.status }}" data-series="{{ b.series or '' }}" data-tags="{{ b.tags }}" data-len="{{ b.audiobook_length or '' }}" data-pages="{{ b.page_count or '' }}" data-format="{{ b.physical_format or '' }}" data-spine-src="{{ b.spine_src }}" data-spine-h="{{ b.spine_h_in or '' }}" data-spine-t="{{ b.spine_t_in or '' }}" data-spine-state="{{ b.spine_state }}">
   <summary>
     <div class="cover"><img src="/api/books/{{ b.id }}/cover?w=200&v={{ b.version }}" onerror="this.src='/static/cover.svg'" loading="lazy" alt=""></div>
     <div class="browse-main">
@@ -103,6 +103,7 @@
 </details>
 {% else %}<p class="empty">No books found.</p>{% endfor %}
 </main>
+<p id="nomatch" class="empty" hidden>No matches.</p>
 
 <section id="shelf" aria-label="Bookshelf" data-spine-rev="{{ spine_rev }}" hidden></section>
 <div id="shelf-modal" hidden>

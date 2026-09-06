@@ -112,11 +112,13 @@ def list_books(db: Database, filters: ListFilter) -> list[dict]:
 
 
 def shelf_counts(db: Database) -> dict[str, int]:
+    """Per-shelf counts plus the virtual TBR shelf: the TBR status across every real shelf."""
     with db.transaction() as connection:
         rows = connection.execute(
             "SELECT shelf, COUNT(*) FROM books WHERE archived=0 GROUP BY shelf"
         ).fetchall()
-    return {shelf: count for shelf, count in rows}
+        tbr = connection.execute("SELECT COUNT(*) FROM books WHERE archived=0 AND status='TBR'").fetchone()[0]
+    return {**{shelf: count for shelf, count in rows}, "TBR": tbr}
 
 
 def all_tags(db: Database) -> list[str]:

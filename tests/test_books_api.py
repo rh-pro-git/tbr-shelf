@@ -166,3 +166,18 @@ def test_health_reports_schema_and_features(client: TestClient) -> None:
     body = client.get("/healthz").json()
     assert body["ok"] and body["schema_version"] >= 7
     assert body["features"] == {"llm": False, "tts": False, "voice": False}
+
+
+def test_tbr_is_a_status_and_a_virtual_shelf(client: TestClient) -> None:
+    dune = add_book(client, title="Dune", shelf="Audible")
+    add_book(client, title="Emma", author="Jane Austen", shelf="Wishlist")
+    dune = client.get(f"/api/books/{dune['id']}").json()["book"]  # the lookup task bumped the version
+    patched = client.patch(f"/api/books/{dune['id']}", json={"version": dune["version"], "status": "TBR"})
+    assert patched.status_code == 200 and patched.json()["book"]["status"] == "TBR"
+    page = client.get("/?shelf=TBR").text
+    assert "Dune" in page and "Emma" not in page
+    assert "TBR (1)" in page and 'class="on" href="/?shelf=TBR"' in page
+    assert "Dune" in client.get("/?shelf=Audible").text  # the real shelf is untouched
+    assert (
+        client.get("/?shelf=TBR&status=Reading").status_code == 200
+    )  # the tab wins over a stale status filter

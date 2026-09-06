@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 import unicodedata
 
@@ -89,3 +90,9 @@ def audible_product_url(asin: str) -> str:
 def asin_from_url(url: str | None) -> str | None:
     match = re.search(r"/pd/([A-Za-z0-9]{10})", url or "")
     return match.group(1) if match else None
+
+
+def strip_html(text: str | None) -> str:
+    text = re.sub(r"<(br|/p|/div)[^>]*>", "\n", text or "", flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\n{3,}", "\n\n", html.unescape(text)).strip()

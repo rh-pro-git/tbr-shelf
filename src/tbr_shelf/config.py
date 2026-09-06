@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 SHELVES: tuple[str, ...] = ("Audible", "Chirp", "Wishlist")
-STATUSES: tuple[str, ...] = ("Unread", "Reading", "Finished", "Paused")
+STATUSES: tuple[str, ...] = ("Unread", "TBR", "Reading", "Finished", "Paused")
 PRINT_FORMATS: tuple[str, ...] = ("Hardcover", "Paperback", "Mass Market")
 SPINE_PREFERENCES: tuple[str, ...] = ("auto", "external", "local")
 

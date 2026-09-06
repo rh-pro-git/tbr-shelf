@@ -52,7 +52,6 @@ function activeFilterCount() {
   const form = document.getElementById('filters');
   if (!form) return 0;
   let count = 0;
-  if (form.querySelector('[name=q]').value) count++;
   ['shelf', 'status', 'tag'].forEach((name) => {
     const field = form.querySelector(`[name=${name}]`);
     if (field && field.value && field.value !== 'All') count++;
@@ -196,7 +195,7 @@ document.querySelectorAll('.book').forEach((tile) => {
     requestAnimationFrame(() => {
       if (!tile.closest('#shelf-modal')) tile.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
-    if (!tile.dataset.loaded) { tile.dataset.loaded = '1'; loadDetail(); }
+    if (!tile.dataset.loaded) { tile.dataset.loaded = '1'; loadDetail(); } else bindNav();
   });
 
   const editedFields = () => {
@@ -337,6 +336,7 @@ document.querySelectorAll('.book').forEach((tile) => {
       if (!response.ok) throw new Error(`Could not load details (${response.status})`);
       detail.outerHTML = await response.text();
       bindDetail();
+      bindNav();
     } catch (error) {
       detail.textContent = '';
       const warning = document.createElement('p');
@@ -347,6 +347,33 @@ document.querySelectorAll('.book').forEach((tile) => {
     }
   }
 
+  // Previous/next title: DOM order in the list (the current filter and sort, skipping anything the live
+  // search hid), spine order inside the shelf modal. Re-bound on every open because the same tile can be
+  // opened in either place.
+  function bindNav() {
+    const inModal = Boolean(tile.closest('#shelf-modal'));
+    const neighbour = (direction) => {
+      if (inModal) return window.rtShelfNeighbour(tile, direction);
+      let element = tile;
+      do element = direction === 'next' ? element.nextElementSibling : element.previousElementSibling;
+      while (element && element.hidden);
+      return element;
+    };
+    tile.querySelectorAll('[data-nav]').forEach((button) => {
+      const target = neighbour(button.dataset.nav);
+      button.hidden = !(target && target.classList && target.classList.contains('book'));
+      if (button.hidden) return;
+      button.querySelector('.nt').textContent = target.dataset.title;
+      button.onclick = () => {
+        if (inModal) { window.rtShelfOpen(target); return; }
+        target.open = true;
+        target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        target.querySelector('summary').focus({ preventScroll: true });
+      };
+    });
+  }
+  tile._nav = bindNav;
+
   function bindDetail() {
     const quickStatus = tile.querySelector('[data-quick="status"]');
     if (quickStatus) {
@@ -354,6 +381,7 @@ document.querySelectorAll('.book').forEach((tile) => {
         try {
           const { book } = await api(`/api/books/${id}`, 'PATCH', { version: version(), status: quickStatus.value });
           tile.dataset.version = book.version;
+          tile.dataset.status = book.status;
           const pill = tile.querySelector('.status-pill');
           if (pill) pill.textContent = book.status;
           say('Status saved');
@@ -686,9 +714,10 @@ document.querySelectorAll('.book').forEach((tile) => {
   function build() {
     if (lazySpines) lazySpines.disconnect();
     shelf.innerHTML = '';
-    if (!tiles.length) { shelf.innerHTML = '<p class="shelf-empty">No books found.</p>'; return; }
+    const visible = tiles.filter((tile) => !tile.hidden);   // the live search hides tiles; the shelf follows
+    if (!visible.length) { shelf.innerHTML = '<p class="shelf-empty">No books found.</p>'; return; }
     const groups = new Map();
-    tiles.forEach((tile) => {
+    visible.forEach((tile) => {
       if (!groups.has(tile.dataset.shelf)) groups.set(tile.dataset.shelf, []);
       groups.get(tile.dataset.shelf).push(tile);
     });
@@ -730,7 +759,8 @@ document.querySelectorAll('.book').forEach((tile) => {
     });
     const legend = document.createElement('div');
     legend.className = 'shelf-legend';
-    legend.innerHTML = '<span><i style="background:var(--amber)"></i>Reading</span>'
+    legend.innerHTML = '<span><i style="background:var(--tbr)"></i>TBR</span>'
+      + '<span><i style="background:var(--amber)"></i>Reading</span>'
       + '<span><i style="background:var(--ok)"></i>Finished</span>'
       + '<span><i style="background:var(--muted)"></i>Paused</span><span>tap a spine to pull it out</span>';
     shelf.append(legend);
@@ -769,6 +799,7 @@ document.querySelectorAll('.book').forEach((tile) => {
     document.querySelectorAll('details.book[open]').forEach((other) => { if (other !== tile) other.open = false; });
     fillRail(tile);
     tile.open = true;
+    if (tile._nav) tile._nav();   // an already-open tile fires no toggle, so re-bind here
     modal.hidden = false;
     document.body.style.overflow = 'hidden';
     modal.querySelector('.sm-dialog').scrollTop = 0;
@@ -788,6 +819,13 @@ document.querySelectorAll('.book').forEach((tile) => {
     const spine = shelf.querySelector(`.spine[data-id="${id}"]`);
     if (spine) spine.focus();
   }
+  window.rtShelfNeighbour = (tile, direction) => {
+    const spines = Array.from(shelf.querySelectorAll('.spine'));
+    const index = spines.findIndex((spine) => spine.dataset.id === tile.dataset.id);
+    const next = spines[index + (direction === 'next' ? 1 : -1)];
+    return next ? tiles.find((candidate) => candidate.dataset.id === next.dataset.id) : null;
+  };
+  window.rtShelfOpen = pullOut;
   modal.querySelector('.sm-close').onclick = putBack;
   modal.querySelector('.sm-backdrop').onclick = putBack;
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !modal.hidden) putBack(); });
@@ -824,6 +862,9 @@ document.querySelectorAll('.book').forEach((tile) => {
   document.querySelectorAll('.segmented button[data-v]').forEach((button) => {
     button.addEventListener('click', () => { if (built) { if (current) putBack(); build(); } });
   });
+  document.addEventListener('rt-search', () => {
+    if (root.dataset.view === 'shelf') { if (current) putBack(); build(); } else built = false;
+  });
   applyView();
 
   const reopen = sessionStorage.getItem('rt-reopen');
@@ -832,4 +873,52 @@ document.querySelectorAll('.book').forEach((tile) => {
     const tile = tiles.find((candidate) => candidate.dataset.id === reopen);
     if (tile) pullOut(tile);
   }
+})();
+
+// ---------- Live search: filter the rendered tiles as you type ----------
+// Same fields as the server's q (title, author, series, tags). Enter or Filter still submits, so a search
+// stays shareable as a URL. The shelf listens for rt-search and rebuilds from the visible tiles.
+
+(function liveSearch() {
+  const input = document.querySelector('.search input');
+  const clear = document.querySelector('.search .clear');
+  const form = document.getElementById('filters');
+  if (!input || !clear || !form) return;
+  const tiles = Array.from(document.querySelectorAll('main details.book'));
+  const noMatch = document.getElementById('nomatch');
+  const serverQuery = (new URLSearchParams(location.search).get('q') || '').toLowerCase();
+  let timer = null;
+
+  function apply() {
+    const needle = input.value.trim().toLowerCase();
+    if (serverQuery && !needle.includes(serverQuery)) { form.requestSubmit(); return; }   // broadening a server-narrowed page needs a fresh one
+    let shown = 0;
+    tiles.forEach((tile) => {
+      const haystack = `${tile.dataset.title} ${tile.dataset.author} ${tile.dataset.series} ${tile.dataset.tags}`.toLowerCase();
+      const hit = !needle || haystack.includes(needle);
+      tile.hidden = !hit;
+      if (hit) shown++;
+      else if (tile.open) tile.open = false;
+    });
+    if (noMatch) noMatch.hidden = shown > 0 || !tiles.length;
+    document.dispatchEvent(new CustomEvent('rt-search'));
+  }
+
+  input.addEventListener('input', () => {
+    clear.hidden = !input.value;
+    clearTimeout(timer);
+    timer = setTimeout(apply, 120);
+  });
+  clear.onclick = () => {
+    if (serverQuery) {   // the server already narrowed this page: reload it whole
+      const url = new URL(location.href);
+      url.searchParams.delete('q');
+      location.href = url;
+      return;
+    }
+    input.value = '';
+    clear.hidden = true;
+    apply();
+    input.focus();
+  };
 })();

@@ -6,9 +6,10 @@ import json
 import logging
 import re
 
-from . import llm
+from . import catalogs, llm
 from .books import get_book, update_book_latest
 from .context import AppContext
+from .text import asin_from_url
 
 log = logging.getLogger(__name__)
 
@@ -32,22 +33,25 @@ def summary_prompt(book: dict) -> str:
 
 
 async def run_summary(ctx: AppContext, book_id: int) -> None:
+    """The publisher's own copy when the book has an Audible ASIN; the model only as a fallback."""
     book = get_book(ctx.db, book_id)
     if book.get("summary"):
         return
-    try:
-        text = await llm.chat(
-            ctx, [{"role": "user", "content": summary_prompt(book)}], temperature=0.4, max_tokens=700
-        )
-    except llm.LLMUnavailable as exc:
-        log.info("summary unavailable for book %s: %s", book_id, exc)
-        update_book_latest(ctx.db, book_id, {"summary_state": "failed"})
-        return
-    usable = bool(text) and text != UNAVAILABLE_TOKEN
+    asin = asin_from_url(book.get("store_url"))
+    text = await catalogs.publisher_summary(asin) if asin else ""
+    if not text:
+        try:
+            text = await llm.chat(
+                ctx, [{"role": "user", "content": summary_prompt(book)}], temperature=0.4, max_tokens=700
+            )
+        except llm.LLMUnavailable as exc:
+            log.info("summary unavailable for book %s: %s", book_id, exc)
+            update_book_latest(ctx.db, book_id, {"summary_state": "failed"})
+            return
+        if text.startswith(UNAVAILABLE_TOKEN):  # the model tends to append its reasoning to the token
+            text = ""
     update_book_latest(
-        ctx.db,
-        book_id,
-        {"summary": text if usable else "", "summary_state": "ready" if usable else "unavailable"},
+        ctx.db, book_id, {"summary": text, "summary_state": "ready" if text else "unavailable"}
     )
     drop_audio(ctx, book_id)
 

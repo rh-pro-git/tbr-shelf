@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import httpx
+
 from . import net
-from .text import format_runtime, match_key, pick_print_format, year_from
+from .text import format_runtime, match_key, pick_print_format, strip_html, year_from
 
 Candidate = dict[str, Any]
 
@@ -129,6 +131,17 @@ async def audible_candidates(title: str, author: str) -> list[Candidate]:
             )
     candidates.sort(key=lambda c: c["abridged"])
     return candidates
+
+
+async def publisher_summary(asin: str) -> str:
+    """Audible's own summary for an ASIN, HTML stripped; empty when the catalog has none or is unreachable."""
+    try:
+        response = await net.request(
+            "GET", f"{AUDIBLE_CATALOG}/{asin}", params={"response_groups": "product_extended_attrs"}
+        )
+    except (TimeoutError, httpx.HTTPError):
+        return ""
+    return strip_html(response.json().get("product", {}).get("publisher_summary"))
 
 
 def merge_candidates(candidates: list[Candidate]) -> list[Candidate]:

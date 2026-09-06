@@ -3,7 +3,7 @@ import base64
 import pytest
 from fastapi.testclient import TestClient
 
-from tbr_shelf import llm, speech, summaries, voice
+from tbr_shelf import catalogs, llm, speech, summaries, voice
 from tbr_shelf.context import AppContext
 from tbr_shelf.summaries import parse_suggestions
 from tests.conftest import add_book
@@ -129,3 +129,51 @@ def test_summary_audio_without_tts_is_503(llm_client: TestClient, monkeypatch: p
     response = llm_client.get(f"/api/books/{book['id']}/audio")
     assert response.status_code == 503
     assert isinstance(speech.SpeechUnavailable("x"), RuntimeError)
+
+
+def test_summary_prefers_the_publisher_copy_when_the_book_has_an_asin(
+    llm_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = stub_chat(monkeypatch, "A model-written summary.")
+    book = add_book(llm_client)
+    current = llm_client.get(f"/api/books/{book['id']}").json()["book"]
+    assert current["summary"] == "A model-written summary." and len(seen) == 1
+
+    async def publisher(asin: str) -> str:
+        assert asin == "B000000001"
+        return "Publisher copy."
+
+    monkeypatch.setattr(catalogs, "publisher_summary", publisher)
+    current = llm_client.patch(
+        f"/api/books/{book['id']}",
+        json={"version": current["version"], "store_url": "https://www.audible.com/pd/B000000001"},
+    ).json()["book"]
+    llm_client.post(f"/api/books/{book['id']}/summary", json={"version": current["version"]})
+    current = llm_client.get(f"/api/books/{book['id']}").json()["book"]
+    assert current["summary_state"] == "ready" and current["summary"] == "Publisher copy."
+    assert len(seen) == 1  # the model was not consulted
+
+
+def test_summary_falls_back_to_the_model_when_the_catalog_has_no_copy(
+    llm_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_chat(monkeypatch, "From the model.")
+    book = add_book(llm_client)
+    current = llm_client.get(f"/api/books/{book['id']}").json()["book"]
+    current = llm_client.patch(
+        f"/api/books/{book['id']}",
+        json={"version": current["version"], "store_url": "https://www.audible.com/pd/B000000002"},
+    ).json()["book"]
+    # the offline fixture fails the catalog request, which must read as "no copy", not as an error
+    llm_client.post(f"/api/books/{book['id']}/summary", json={"version": current["version"]})
+    current = llm_client.get(f"/api/books/{book['id']}").json()["book"]
+    assert current["summary_state"] == "ready" and current["summary"] == "From the model."
+
+
+def test_a_padded_unavailable_reply_is_unavailable(
+    llm_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_chat(monkeypatch, f"{summaries.UNAVAILABLE_TOKEN}\n\nAs of now there is no record of such a book.")
+    book = add_book(llm_client)
+    current = llm_client.get(f"/api/books/{book['id']}").json()["book"]
+    assert current["summary_state"] == "unavailable" and current["summary"] == ""

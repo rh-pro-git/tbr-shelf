@@ -29,6 +29,8 @@
       </div>
     </div>
 
+    {% set booknav %}<div class="booknav"><button type="button" data-nav="prev" hidden>&lsaquo; <span class="nt"></span></button><button type="button" data-nav="next" hidden><span class="nt"></span> &rsaquo;</button></div>{% endset %}
+    {{ booknav }}
     {% if features.llm or b.summary %}
     <div class="summary-box">
       <b>Spoiler-free summary</b>
@@ -41,6 +43,7 @@
         {% endif %}
       </div>
     </div>
+    {{ booknav }}
     {% endif %}
 
     <details class="subpanel spinepanel"><summary>Spine {% if b.spine_state == 'queued' %}&middot; <span class="working">queued for the external generator…</span>{% elif b.spine_meta_d %}&middot; {{ 'external · photo-informed' if b.spine_kind == 'photo' else 'external · cover-informed' if b.spine_kind == 'generated' else 'local render' }}{% endif %}</summary>

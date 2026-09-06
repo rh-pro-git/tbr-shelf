@@ -2,7 +2,7 @@
   --bg:#14181a; --surface:#1d2326; --surface-2:#232a2d;
   --text:#eae7de; --muted:#8b9296; --border:#2c3336;
   --amber:#e0a45c; --chirp:#4fb3a6; --wishlist:#9081c9;
-  --danger:#c9636b; --ok:#7fb56b;
+  --danger:#c9636b; --ok:#7fb56b; --tbr:#5da9e9;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
@@ -47,6 +47,15 @@ nav a.on{background:var(--surface-2); color:var(--text); font-weight:600}
 .filters-toggle[hidden]{display:none}
 .filters-toggle .fcount{opacity:.7; font-size:12px}
 .filters button{background:var(--surface-2); border:1px solid var(--border)}
+.searchbar{max-width:1180px; margin:12px auto 0; padding-left:18px; padding-right:18px}
+.search{position:relative; display:flex; max-width:440px}
+.search input{flex:1; min-width:0; padding-right:32px}
+.search .clear{position:absolute; right:4px; top:50%; transform:translateY(-50%); background:transparent; border:0; color:var(--muted); font-size:20px; line-height:1; padding:4px 8px; cursor:pointer}
+.search .clear:hover{color:var(--text)}
+.search .clear[hidden]{display:none}
+main details.book[hidden]{display:none}
+#nomatch{max-width:1180px; margin:auto; padding:24px 18px}
+#nomatch[hidden]{display:none}
 
 main{display:grid; grid-template-columns:1fr; gap:12px; margin-top:22px; padding-bottom:70px}
 html[data-density="desktop"] main{grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); align-items:start}
@@ -73,6 +82,7 @@ html[data-density="desktop"] .book[open]{grid-column:1/-1}
 .book .waveform i:nth-child(1){height:35%} .book .waveform i:nth-child(2){height:70%} .book .waveform i:nth-child(3){height:50%} .book .waveform i:nth-child(4){height:95%} .book .waveform i:nth-child(5){height:40%} .book .waveform i:nth-child(6){height:65%} .book .waveform i:nth-child(7){height:25%} .book .waveform i:nth-child(8){height:55%} .book .waveform i:nth-child(9){height:80%} .book .waveform i:nth-child(10){height:45%}
 
 .book .status-pill{font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); border:1px solid var(--border); border-radius:20px; padding:3px 9px; white-space:nowrap; flex-shrink:0}
+.book[data-status="TBR"] .status-pill{color:var(--tbr); border-color:var(--tbr)}
 .book .chev{color:var(--muted); flex-shrink:0; font-size:18px; line-height:1; transition:transform .15s ease}
 .book[open] .chev{transform:rotate(90deg)}
 @media (prefers-reduced-motion:reduce){.book .chev{transition:none}}
@@ -103,6 +113,11 @@ html[data-density="mobile"] .bigcover{width:110px}
 .summary-box{background:var(--surface-2); border-radius:8px; padding:12px; margin-top:14px}
 .summary-box b{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); display:block; margin-bottom:6px; font-weight:600}
 .summary-box p{margin:0 0 10px; font-size:13.5px; color:#c9c6bc; line-height:1.6}
+.booknav{display:flex; justify-content:space-between; gap:8px; margin-top:10px}
+.booknav button{flex:1; min-width:0; display:flex; align-items:center; gap:6px; font-size:12.5px; padding:7px 13px; border-radius:20px; background:transparent; border:1px solid var(--border); color:var(--text)}
+.booknav button[data-nav="next"]{justify-content:flex-end}
+.booknav button[hidden]{display:none}
+.booknav .nt{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
 .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
 .actions button{font-size:12.5px; padding:7px 13px; border-radius:20px}
@@ -199,6 +214,7 @@ html[data-view="shelf"] #shelf{display:block}
 .spine[data-status="Reading"] .ribbon{background:var(--amber)}
 .spine[data-status="Finished"] .ribbon{background:var(--ok)}
 .spine[data-status="Paused"] .ribbon{background:var(--muted)}
+.spine[data-status="TBR"] .ribbon{background:var(--tbr)}
 .spine[data-status="Unread"] .ribbon{display:none}
 .spine[data-lookup="verify"]::after{content:""; position:absolute; top:6px; left:5px; width:6px; height:6px; border-radius:50%; background:var(--amber); box-shadow:0 0 0 2px rgba(0,0,0,.35)}
 .shelf-legend{display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; font-family:var(--mono); font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em}

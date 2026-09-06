@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 
 from tests.conftest import add_book
@@ -44,3 +46,21 @@ def test_static_assets_cache_by_version(client: TestClient) -> None:
     assert versioned.headers["cache-control"] == "public, max-age=31536000, immutable"
     unversioned = client.get("/static/manifest.webmanifest")
     assert unversioned.headers["cache-control"] == "public, max-age=86400"
+
+
+def test_page_carries_live_search_and_the_tag_typeahead(client: TestClient) -> None:
+    add_book(client, tags="fantasy, classics")
+    page = client.get("/").text
+    assert 'class="searchbar"' in page and 'form="filters" name="q"' in page
+    assert '<input name="tag" list="taglist"' in page and '<option value="Classics">' in page
+    assert re.search(r'data-tags="[^"]*Fantasy[^"]*"', page)
+    assert '<p id="nomatch" class="empty" hidden>' in page
+
+
+def test_detail_fragment_has_title_nav_rows_around_the_summary(
+    client: TestClient, llm_client: TestClient
+) -> None:
+    plain = client.get(f"/api/books/{add_book(client)['id']}/detail").text
+    assert plain.count('class="booknav"') == 1  # no model and no summary: only the row above
+    with_model = llm_client.get(f"/api/books/{add_book(llm_client)['id']}/detail").text
+    assert with_model.count('class="booknav"') == 2

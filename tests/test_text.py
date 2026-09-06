@@ -7,6 +7,7 @@ from tbr_shelf.text import (
     normalize_tags,
     pick_print_format,
     split_tags,
+    strip_html,
     year_from,
 )
 
@@ -46,3 +47,8 @@ def test_small_formatters() -> None:
     assert not is_asin("abc")
     assert asin_from_url("https://www.audible.com/pd/B0ABCDEFGH?x=1") == "B0ABCDEFGH"
     assert asin_from_url(None) is None
+
+
+def test_strip_html_keeps_paragraph_breaks_and_unescapes() -> None:
+    assert strip_html("<p>One &amp; two.</p><p>Three<br>four</p>") == "One & two.\nThree\nfour"
+    assert strip_html(None) == ""

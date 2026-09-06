@@ -69,8 +69,10 @@ async def index(
     sort: str = "added",
     ctx: AppContext = Depends(get_ctx),
 ) -> HTMLResponse:
-    if shelf not in (*SHELVES, "All"):
+    if shelf not in (*SHELVES, "All", "TBR"):
         shelf = "All"
+    if shelf == "TBR":  # a virtual shelf: the TBR status across every real shelf
+        status = "TBR"
     if sort not in dict(SORT_LABELS):
         sort = "added"
     filters = ListFilter(shelf=shelf, status=status, tag=tag, query=q, archived=bool(archived), sort=sort)
