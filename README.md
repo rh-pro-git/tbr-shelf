@@ -15,8 +15,14 @@ and the tracker is complete without any of them.
 ## What it does
 
 - **Three shelves, one page.** Audible, Chirp and Wishlist, with status
-  (Unread / Reading / Finished / Paused), series, tags, notes, start and finish
-  dates, and deep links that open the book in the store or the app.
+  (Unread / TBR / Reading / Finished / Paused), series, tags, notes, start and
+  finish dates, and deep links that open the book in the store or the app. A
+  **TBR** tab gathers the books you've marked as up next from every shelf, and
+  an open book has previous/next controls so you can walk the list without
+  closing it.
+- **Search as you type.** The search box filters the page as you type, across
+  title, author, series and tags, with one tap to clear; the shelf view follows.
+  Tags are picked from a typeahead instead of a long dropdown.
 - **Metadata that never overwrites you.** Adding a title queries Open Library,
   Google Books and the Audible catalog in parallel. Blank fields are filled;
   existing ones are left alone. When the catalogs disagree with what you typed
@@ -38,9 +44,11 @@ and the tracker is complete without any of them.
   book.
 - **Optional AI, cleanly optional.** With an OpenAI-compatible chat endpoint
   (a local llama.cpp server, Ollama, vLLM, or a hosted API): spoiler-free
-  summaries, "similar books" suggestions that are added only if you say so, and
-  a voice librarian. With a speech endpoint: summaries read aloud. Unconfigured
-  features hide their buttons and answer 503; nothing breaks.
+  summaries (the publisher's own copy when the book has an Audible ASIN, the
+  model only when the catalog has nothing), "similar books" suggestions that
+  are added only if you say so, and a voice librarian. With a speech endpoint:
+  summaries read aloud. Unconfigured features hide their buttons and answer
+  503; nothing breaks.
 - **A librarian that only learns what you approve.** Voice chat runs
   speech-to-text locally, answers from the live library, and speaks the reply.
   Conversations are persisted for review, but the assistant's prompt only ever

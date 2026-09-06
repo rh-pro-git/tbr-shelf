@@ -1,3 +1,3 @@
 """TBR Shelf: a self-hosted reading tracker with a rendered bookshelf and an optional AI librarian."""
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

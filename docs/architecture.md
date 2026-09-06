@@ -31,7 +31,7 @@ browser ──HTTP──▶ FastAPI app ──▶ SQLite (library.db, WAL)
 | `covers.py` | Cover cache: fetch once with an atomic swap, sniff the type, serve the source or a display-size WebP derivative. |
 | `spines.py` | Local spine renderer (PIL), external spine fitting, effective-source rule; every served spine is WebP. |
 | `llm.py`, `speech.py` | Thin clients: chat completions, TTS, lazy-loaded STT. |
-| `summaries.py` | Spoiler-free summaries and similar-book suggestions. |
+| `summaries.py` | Spoiler-free summaries (publisher copy by ASIN first, the model as fallback) and similar-book suggestions. |
 | `voice.py` | The librarian: prompt assembly, session history, conversation persistence, gated preferences. |
 | `importers.py` | CSV rows (enriched afterwards) and pre-enriched rows (not). |
 | `routes/` | HTTP surface, one router per concern (`pages.py` also serves the per-tile detail fragment). `app.py` wires them, gzip, static caching and the exception handlers. |

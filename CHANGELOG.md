@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.0 — 2026-09-06
+
+Finding things in a large library, and summaries that come from the source.
+
+- **TBR** is a status, and a virtual **TBR** tab after All gathers every book marked TBR
+  across the real shelves without moving it. Blue ribbon on the shelf, blue pill in the
+  list; the librarian's prompt treats TBR as the shortlist and Unread as the backlog.
+- **Search as you type.** The search box sits on its own row above the filters and filters
+  the rendered page on input across title, author, series and tags, with a clear button.
+  Enter or Filter still submits, so a search stays a shareable URL; clearing or widening a
+  server-narrowed page reloads it. The shelf view rebuilds from the visible tiles.
+- The tag filter is a typeahead over every tag instead of a long dropdown.
+- **Previous / next title** controls above and below an open book's summary, following the
+  list's current order (skipping anything the search hid) or spine order inside the shelf
+  modal.
+- Summaries prefer the publisher's own copy: when a book has an Audible ASIN the summary
+  task fetches it from the catalog and asks the model only when the catalog has nothing.
+  A model reply that starts with UNAVAILABLE and goes on to explain itself is recorded as
+  unavailable instead of being stored as the summary. Summaries still require a configured
+  model; letting catalog copy through without one is a follow-up.
+
 ## 1.1.0 — 2026-09-04
 
 Page weight and the asset pipeline. Measured on a 760-book library in headless Chrome,
