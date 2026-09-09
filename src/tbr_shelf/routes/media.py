@@ -5,14 +5,16 @@ from __future__ import annotations
 import asyncio
 import json
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
-from .. import spines, summaries
+from .. import catalogs, net, spines, summaries
 from ..books import get_book, update_book
 from ..context import AppContext
 from ..covers import cached_media_type, clamp_fit_width, cover_path, fit_cover
 from ..speech import synthesize
+from ..text import asin_from_url
 from . import get_ctx
 
 router = APIRouter(prefix="/api")
@@ -98,6 +100,22 @@ async def put_spine_asset(
             stale.unlink(missing_ok=True)
     updated = update_book(ctx.db, book_id, book["version"], changes)
     return {"book": updated, "effective": spines.effective_spine_source(ctx, updated)}
+
+
+@router.get("/books/{book_id}/sample")
+async def narration_sample(book_id: int, ctx: AppContext = Depends(get_ctx)) -> RedirectResponse:
+    """Audible's narration sample for the edition the store link names, resolved on request.
+    Nothing is stored."""
+    asin = asin_from_url(get_book(ctx.db, book_id).get("store_url"))
+    if not asin:
+        raise HTTPException(404, "No Audible edition on this book")
+    try:
+        product = await catalogs.audible_product(asin)
+    except (TimeoutError, httpx.HTTPError) as exc:
+        raise HTTPException(503, f"Audible is not answering ({net.describe_error(exc)}).") from exc
+    if not (product and product.get("sample_url")):
+        raise HTTPException(404, "Audible has no sample for this edition")
+    return RedirectResponse(product["sample_url"], status_code=302)
 
 
 @router.get("/books/{book_id}/audio")

@@ -14,6 +14,7 @@ from ..config import SHELVES, STATUSES
 from ..context import AppContext
 from ..lookup import parse_lookup_envelope
 from ..spines import SPINE_REV, effective_spine_source, spine_meta
+from ..text import asin_from_url
 from . import get_ctx
 
 PACKAGE_DIR = Path(__file__).resolve().parents[1]
@@ -46,6 +47,7 @@ def decorate_for_view(ctx: AppContext, book: dict) -> dict:
     book["src_errors"] = ", ".join(
         f"{name}: {status}" for name, status in (envelope.get("sources") or {}).items() if status != "ok"
     )
+    book["asin"] = asin_from_url(book.get("store_url"))
     meta = spine_meta(book)
     book["spine_src"] = effective_spine_source(ctx, book)
     book["spine_h_in"] = meta.get("height_in")

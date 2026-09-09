@@ -146,6 +146,7 @@ def import_enriched(ctx: AppContext, books: list[ImportedBook]) -> ImportResult:
                 {
                     "title": book.title.strip()[:500],
                     "author": book.author.strip()[:500],
+                    "narrator": (book.narrator or "").strip() or None,
                     "series": (book.series or "").strip() or None,
                     "shelf": book.shelf,
                     "status": _status_of(book.status),

@@ -74,7 +74,7 @@
   {% for x in ['All', 'TBR'] + shelves|list %}<a class="{{ 'on' if shelf == x and not archived }}" href="/?shelf={{ x }}">{{ x }}{% if x != 'All' %} ({{ counts.get(x, 0) }}){% endif %}</a>{% endfor %}<a class="{{ 'on' if archived }}" href="/?archived=1">Archive</a>
 </nav>
 
-<div class="searchbar"><span class="search"><input form="filters" name="q" value="{{ q }}" placeholder="Search title, author, series or tag" autocomplete="off" aria-label="Search"><button type="button" class="clear" aria-label="Clear search" {{ 'hidden' if not q }}>&times;</button></span></div>
+<div class="searchbar"><span class="search"><input form="filters" name="q" value="{{ q }}" placeholder="Search title, author, narrator or tag" autocomplete="off" aria-label="Search"><button type="button" class="clear" aria-label="Clear search" {{ 'hidden' if not q }}>&times;</button></span></div>
 <button type="button" id="filtersToggle" class="filters-toggle" aria-expanded="false" aria-controls="filters" hidden>Filters <span class="fcount"></span></button>
 <form class="filters" id="filters">
   <input type="hidden" name="archived" value="{{ archived }}">
@@ -87,7 +87,7 @@
 
 <main>
 {% for b in books %}
-<details class="book" name="book" data-id="{{ b.id }}" data-version="{{ b.version }}" data-shelf="{{ b.shelf }}" data-lookup="{{ b.lookup_state }}" data-summary="{{ b.summary_state }}" data-title="{{ b.title }}" data-author="{{ b.author }}" data-status="{{ b.status }}" data-series="{{ b.series or '' }}" data-tags="{{ b.tags }}" data-len="{{ b.audiobook_length or '' }}" data-pages="{{ b.page_count or '' }}" data-format="{{ b.physical_format or '' }}" data-spine-src="{{ b.spine_src }}" data-spine-h="{{ b.spine_h_in or '' }}" data-spine-t="{{ b.spine_t_in or '' }}" data-spine-state="{{ b.spine_state }}">
+<details class="book" name="book" data-id="{{ b.id }}" data-version="{{ b.version }}" data-shelf="{{ b.shelf }}" data-lookup="{{ b.lookup_state }}" data-summary="{{ b.summary_state }}" data-title="{{ b.title }}" data-author="{{ b.author }}" data-narrator="{{ b.narrator or '' }}" data-status="{{ b.status }}" data-series="{{ b.series or '' }}" data-tags="{{ b.tags }}" data-len="{{ b.audiobook_length or '' }}" data-pages="{{ b.page_count or '' }}" data-format="{{ b.physical_format or '' }}" data-spine-src="{{ b.spine_src }}" data-spine-h="{{ b.spine_h_in or '' }}" data-spine-t="{{ b.spine_t_in or '' }}" data-spine-state="{{ b.spine_state }}">
   <summary>
     <div class="cover"><img src="/api/books/{{ b.id }}/cover?w=200&v={{ b.version }}" onerror="this.src='/static/cover.svg'" loading="lazy" alt=""></div>
     <div class="browse-main">
@@ -104,6 +104,7 @@
 {% else %}<p class="empty">No books found.</p>{% endfor %}
 </main>
 <p id="nomatch" class="empty" hidden>No matches.</p>
+<section id="beyond" class="beyond" aria-label="Beyond your library" hidden></section>
 
 <section id="shelf" aria-label="Bookshelf" data-spine-rev="{{ spine_rev }}" hidden></section>
 <div id="shelf-modal" hidden>

@@ -5,6 +5,7 @@
       <div class="info">
         <h2>{{ b.title }}</h2>
         <p class="byline">{{ b.author or 'Unknown author' }}{% if b.series %} &middot; {{ b.series }}{% endif %}</p>
+        {% if b.narrator %}<p class="narrator">Narrated by {{ b.narrator }}</p>{% endif %}
         <dl class="facts">
           <div><dt>Shelf</dt><dd>{{ b.shelf }}</dd></div>
           <div><dt>Status</dt><dd><select data-quick="status" aria-label="Status">{% for x in statuses %}<option {{ 'selected' if b.status == x }}>{{ x }}</option>{% endfor %}{% if b.status == 'Archived' %}<option selected>Archived</option>{% endif %}</select></dd></div>
@@ -20,6 +21,7 @@
         <div class="chips">{% for t in b.tags.split(',') if t.strip() %}<a class="chip" href="/?tag={{ t.strip()|urlencode }}">{{ t.strip() }}</a>{% endfor %}</div>
         <div class="chips storelinks">
           {% set sq = (b.title ~ ' ' ~ b.author)|urlencode %}
+          {% if b.asin %}<button type="button" class="chip sample" data-a="sample" data-sample="/api/books/{{ b.id }}/sample" title="Five minutes of the narration, from Audible">&#9654; Hear a sample</button>{% endif %}
           {% if b.shelf == 'Chirp' %}<a class="chip store" href="https://www.chirpbooks.com/library" target="_blank" rel="noopener">Open Chirp library &#8599;</a>{% endif %}
           {% if b.store_url %}<a class="chip store" href="{{ b.store_url }}" target="_blank" rel="noopener">{{ 'Buy' if b.shelf == 'Wishlist' else 'Open' }} on {{ 'Audible' if 'audible.' in b.store_url else 'Chirp' if 'chirpbooks.' in b.store_url else 'store' }} &#8599;</a>
           {% elif b.shelf in ['Audible', 'Wishlist'] %}<a class="chip store" href="https://www.audible.com/search?keywords={{ sq }}" target="_blank" rel="noopener">Find on Audible &#8599;</a>{% endif %}
@@ -88,6 +90,7 @@
       <div class="edit-grid">
         <input data-field="title" value="{{ b.title }}" placeholder="Title" aria-label="Title">
         <input data-field="author" value="{{ b.author }}" placeholder="Author" aria-label="Author">
+        <input data-field="narrator" value="{{ b.narrator or '' }}" placeholder="Narrator" aria-label="Narrator">
         <input data-field="series" placeholder="Series" value="{{ b.series or '' }}" aria-label="Series">
         <select data-field="shelf" aria-label="Shelf">{% for x in shelves %}<option {{ 'selected' if b.shelf == x }}>{{ x }}</option>{% endfor %}</select>
         <input data-field="tags" placeholder="tags, commas" value="{{ b.tags }}" aria-label="Tags">

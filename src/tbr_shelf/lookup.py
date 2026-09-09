@@ -37,6 +37,10 @@ def parse_lookup_envelope(raw: str | None) -> dict:
     return envelope if isinstance(envelope, dict) else {"candidates": []}
 
 
+def authors_agree(book: dict, candidate: dict) -> bool:
+    return catalogs.authors_overlap(book["author"], candidate["author"])
+
+
 def author_conflict(book: dict, best: dict | None) -> list[dict]:
     if not (best and book.get("author") and best.get("author")):
         return []
@@ -71,6 +75,8 @@ def lookup_changes(
                 changes[field] = best[field]
 
     audible = catalogs.match_exact(book, [c for c in candidates if c.get("asin")])
+    if audible and book.get("author") and audible.get("author") and not authors_agree(book, audible):
+        audible = None  # same title, someone else's book: no store link, runtime, narrator or art from it
     if audible:
         if book["shelf"] in ("Audible", "Wishlist") and (refresh or not book.get("store_url")):
             changes["store_url"] = audible_product_url(audible["asin"])
@@ -83,6 +89,10 @@ def lookup_changes(
             and audible.get("year")
         ):
             changes["year"] = audible["year"]
+        if audible.get("narrator") and (refresh or not book.get("narrator")):
+            changes["narrator"] = audible["narrator"]
+        if audible.get("series_title") and not book.get("series"):
+            changes["series"] = audible["series_title"]  # series text is the reader's; only a blank is filled
 
     # Covers fill only when blank; replacing one is always the reader's choice. The default is
     # the author-verified Audible edition's art (what the listening apps show), else the best match's.
@@ -130,6 +140,10 @@ def candidate_changes(book: dict, candidate: dict) -> tuple[dict, bool]:
             changes["store_url"] = audible_product_url(asin)
         if isinstance(candidate.get("minutes"), int) and not book.get("audiobook_length"):
             changes["audiobook_length"] = catalogs.runtime_text(candidate)
+        for field, column in (("narrator", "narrator"), ("series_title", "series")):
+            value = candidate.get(field)
+            if isinstance(value, str) and value.strip() and not book.get(column):
+                changes[column] = value.strip()[:500]
     identity_changed = ("title" in changes and match_key(changes["title"]) != match_key(book["title"])) or (
         "author" in changes and match_key(changes["author"]) != match_key(book["author"])
     )

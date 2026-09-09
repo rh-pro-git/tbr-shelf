@@ -18,12 +18,14 @@ class BookCreate(BaseModel):
     series: str | None = None
     tags: str = ""
     notes: str = ""
+    asin: str | None = Field(default=None, pattern=r"^[A-Za-z0-9]{10}$")
 
 
 class BookUpdate(BaseModel):
     version: int
     title: str | None = Field(default=None, max_length=500)
     author: str | None = Field(default=None, max_length=500)
+    narrator: str | None = Field(default=None, max_length=500)
     series: str | None = None
     shelf: Shelf | None = None
     status: str | None = None
@@ -55,6 +57,7 @@ class ImportedBook(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     author: str = Field(default="", max_length=500)
     asin: str | None = Field(default=None, min_length=10, max_length=10)
+    narrator: str | None = Field(default=None, max_length=500)
     series: str | None = None
     shelf: Shelf = "Audible"
     status: str = "Unread"

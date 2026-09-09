@@ -46,6 +46,7 @@ def test_enriched_import_dedupes_by_asin_then_title(client: TestClient) -> None:
             "asin": "B0DUNE0001",
             "summary": "<p>Desert&nbsp;planet.</p>",
             "year": 1965,
+            "narrator": "Scott Brick",
         },
         {"title": "Dune (Unabridged)", "author": "Frank Herbert", "asin": "B0DUNE0001"},
         {"title": "Dune", "author": "Frank Herbert", "shelf": "Audible"},
@@ -58,6 +59,7 @@ def test_enriched_import_dedupes_by_asin_then_title(client: TestClient) -> None:
     dune = client.get(f"/api/books/{body['ids'][0]}").json()["book"]
     assert dune["store_url"] == "https://www.audible.com/pd/B0DUNE0001"
     assert dune["lookup_state"] == "ready" and dune["summary_state"] == "ready"
+    assert dune["narrator"] == "Scott Brick"
     emma = client.get(f"/api/books/{body['ids'][1]}").json()["book"]
     assert emma["started_at"] == "2026-01-02" and emma["summary_state"] == "none"
 

@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from datetime import date
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from .. import catalogs, summaries
-from ..books import delete_archived_book, get_book, insert_book, update_book
+from .. import catalogs, net, summaries
+from ..books import delete_archived_book, find_by_asin, get_book, insert_book, update_book
 from ..config import PRINT_FORMATS, STATUSES
 from ..context import AppContext
 from ..covers import cache_cover, drop_cover_cache
 from ..lookup import candidate_changes, parse_lookup_envelope, run_lookup
 from ..models import BookCreate, BookUpdate, CandidateAccept, VersionAction
-from ..text import is_iso_date, match_key, normalize_tags
+from ..text import audible_product_url, is_iso_date, match_key, normalize_tags
 from . import get_ctx
 
 router = APIRouter(prefix="/api/books")
@@ -28,34 +29,75 @@ def queue_enrichment(ctx: AppContext, bg: BackgroundTasks, book_id: int) -> None
         bg.add_task(summaries.run_summary, ctx, book_id)
 
 
+async def audible_edition(ctx: AppContext, asin: str) -> dict:
+    """The catalog record for an edition the reader picked. A duplicate is a 409 naming the existing book."""
+    existing = find_by_asin(ctx.db, asin)
+    if existing is not None:
+        raise HTTPException(409, {"message": "Already in your library", "book_id": existing})
+    try:
+        product = await catalogs.audible_product(asin)
+    except (TimeoutError, httpx.HTTPError) as exc:
+        raise HTTPException(503, f"Audible is not answering ({net.describe_error(exc)}).") from exc
+    if product is None:
+        raise HTTPException(404, "No such Audible title")
+    return product
+
+
+def enriched_fields(product: dict, has_llm: bool) -> dict:
+    """What a catalog edition already knows, so the row lands complete and no lookup runs for it."""
+    summary = product.get("summary") or ""
+    return {
+        "title": product["title"][:500],
+        "author": product["author"][:500],
+        "narrator": product.get("narrator"),
+        "series": product.get("series_title"),
+        "year": product.get("year"),
+        "audiobook_length": catalogs.runtime_text(product),
+        "cover": product.get("cover") or "",
+        "store_url": audible_product_url(product["asin"]),
+        "summary": summary,
+        "lookup_state": "ready",
+        "summary_state": "ready" if summary else ("queued" if has_llm else "none"),
+    }
+
+
 @router.post("")
 async def create(
     payload: BookCreate, bg: BackgroundTasks, ctx: AppContext = Depends(get_ctx)
 ) -> JSONResponse:
     if payload.status not in STATUSES:
         raise HTTPException(422, "Invalid status")
+    product = await audible_edition(ctx, payload.asin) if payload.asin else None
+    fields = {
+        "title": payload.title.strip(),
+        "author": payload.author.strip(),
+        "series": payload.series,
+        "shelf": payload.shelf,
+        "status": payload.status,
+        "tags": normalize_tags(payload.tags),
+        "notes": payload.notes,
+        "date_added": date.today().isoformat(),
+        "lookup_state": "queued",
+        "summary_state": "queued" if ctx.settings.has_llm else "none",
+    }
+    if product is not None:
+        fields.update(enriched_fields(product, ctx.settings.has_llm))
+        if payload.series:
+            fields["series"] = payload.series
     with ctx.db.transaction() as connection:
-        book_id = insert_book(
-            connection,
-            {
-                "title": payload.title.strip(),
-                "author": payload.author.strip(),
-                "series": payload.series,
-                "shelf": payload.shelf,
-                "status": payload.status,
-                "tags": normalize_tags(payload.tags),
-                "notes": payload.notes,
-                "date_added": date.today().isoformat(),
-                "lookup_state": "queued",
-                "summary_state": "queued" if ctx.settings.has_llm else "none",
-            },
+        book_id = insert_book(connection, fields)
+    if product is not None:
+        bg.add_task(cache_cover, ctx, book_id)
+        if fields["summary_state"] == "queued":
+            bg.add_task(summaries.run_summary, ctx, book_id)
+        message = "Added from the Audible catalog."
+    else:
+        queue_enrichment(ctx, bg, book_id)
+        message = (
+            "Added. Metadata"
+            + (" and spoiler-free summary are" if ctx.settings.has_llm else " is")
+            + " being prepared."
         )
-    queue_enrichment(ctx, bg, book_id)
-    message = (
-        "Added. Metadata"
-        + (" and spoiler-free summary are" if ctx.settings.has_llm else " is")
-        + " being prepared."
-    )
     return JSONResponse({"book": get_book(ctx.db, book_id), "message": message}, status_code=201)
 
 
@@ -70,6 +112,8 @@ def validated_changes(book: dict, payload: BookUpdate) -> dict:
         raise HTTPException(422, "Invalid status")
     if "tags" in changes:
         changes["tags"] = normalize_tags(changes["tags"])
+    if "narrator" in changes:
+        changes["narrator"] = (changes["narrator"] or "").strip() or None
     for field in ("started_at", "finished_at"):
         if field in changes:
             value = (changes[field] or "").strip()

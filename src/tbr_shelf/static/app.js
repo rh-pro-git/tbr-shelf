@@ -170,6 +170,46 @@ function resetListenButton(button) {
   button.classList.remove('speaking');
 }
 
+// ---------- Narration samples: one at a time, created inside the tap so mobile browsers allow it ----------
+// The sample and the summary narration stop each other.
+
+let sampleAudio = null;
+let sampleButton = null;
+
+function stopSample() {
+  if (sampleAudio) { sampleAudio.pause(); sampleAudio.src = ''; sampleAudio = null; }
+  if (sampleButton) {
+    sampleButton.textContent = sampleButton.dataset.label;
+    sampleButton.classList.remove('playing');
+    sampleButton = null;
+  }
+}
+
+async function playSample(button, url) {
+  if (sampleButton === button) { stopSample(); return; }
+  stopSample();
+  if (speakingButton) { const previous = speakingButton; stopSpeaking(); resetListenButton(previous); }
+  button.dataset.label = button.dataset.label || button.textContent;
+  sampleButton = button;
+  button.textContent = 'Loading…';
+  const audio = new Audio(url);
+  sampleAudio = audio;
+  audio.onplaying = () => {
+    if (sampleButton === button) { button.textContent = '❚❚ Pause'; button.classList.add('playing'); }
+  };
+  audio.onended = () => { if (sampleButton === button) stopSample(); };
+  audio.onerror = () => {
+    if (sampleButton !== button) return;
+    stopSample();
+    say('No sample could be played for this edition.');
+  };
+  try { await audio.play(); }
+  catch {
+    if (sampleButton === button) stopSample();
+    say('Playback failed — try again.');
+  }
+}
+
 function coverButton(url, title, onPick) {
   const button = document.createElement('button');
   button.className = 'coverpick';
@@ -222,6 +262,7 @@ document.querySelectorAll('.book').forEach((tile) => {
       if (speakingButton === button) { stopSpeaking(); resetListenButton(button); return; }
       const previous = speakingButton;
       stopSpeaking();
+      stopSample();
       if (previous) resetListenButton(previous);
       speakingButton = button;
       button.textContent = 'Loading…';
@@ -238,6 +279,7 @@ document.querySelectorAll('.book').forEach((tile) => {
         say('Playback failed — try again.');
       }
     },
+    async sample(button) { await playSample(button, button.dataset.sample); },
     async delete() {
       if (!confirm('Permanently delete?')) return;
       await api(`/api/books/${id}`, 'DELETE', { version: version() });
@@ -875,9 +917,135 @@ document.querySelectorAll('.book').forEach((tile) => {
   }
 })();
 
+// ---------- Beyond the library: Audible's keyword search for what is not here ----------
+// Runs on its own when nothing local matches, by a tap when something does. Results are kept per query,
+// and an add comes back to the page narrowed to the same search, where the new tile now sits.
+
+const beyond = (function beyondTheLibrary() {
+  const section = document.getElementById('beyond');
+  if (!section) return { update() {} };
+  const MIN_QUERY_CHARS = 2;
+  const AUTO_DELAY_MS = 500;
+  let last = { q: '', shown: 0 };
+  let found = { q: '', results: [], error: '' };
+  let timer = null;
+
+  function element(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function runtime(minutes) { return minutes ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : ''; }
+
+  async function add(hit, button) {
+    button.disabled = true;
+    button.textContent = 'Adding…';
+    try {
+      await api('/api/books', 'POST', { title: hit.title, author: hit.author, asin: hit.asin, shelf: 'Wishlist' });
+      say('Added to the Wishlist');
+    } catch (error) {
+      if (error.status !== 409) {
+        button.disabled = false;
+        button.textContent = '+ Wishlist';
+        say(error.message);
+        return;
+      }
+      say('Already in your library');
+    }
+    location.href = `/?q=${encodeURIComponent(last.q)}`;
+  }
+
+  function hitRow(hit) {
+    const row = element('article', 'hit');
+    const cover = element('img', 'hit-cover');
+    cover.loading = 'lazy';
+    cover.alt = '';
+    cover.src = hit.cover || '/static/cover.svg';
+    cover.onerror = () => { cover.src = '/static/cover.svg'; };
+    const main = element('div', 'hit-main');
+    main.append(element('p', 'hit-title', hit.title), element('p', 'hit-author', hit.author || 'Unknown author'));
+    const facts = [hit.narrator ? `Narrated by ${hit.narrator}` : '', runtime(hit.minutes), hit.year || '']
+      .filter(Boolean).join(' · ');
+    if (facts) main.append(element('p', 'hit-facts', facts));
+    const actions = element('div', 'hit-actions');
+    if (hit.book_id) {
+      const tile = document.querySelector(`details.book[data-id="${hit.book_id}"]`);
+      const owned = element('button', 'owned', tile ? tile.dataset.status : 'In your library');
+      owned.type = 'button';
+      owned.title = 'In your library';
+      owned.disabled = !tile;
+      owned.onclick = () => {
+        tile.hidden = false;
+        tile.open = true;
+        tile.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      };
+      actions.append(owned);
+    } else {
+      const button = element('button', 'add', '+ Wishlist');
+      button.type = 'button';
+      button.title = 'Add this edition to the Wishlist';
+      button.onclick = () => add(hit, button);
+      actions.append(button);
+    }
+    if (hit.sample_url) {
+      const sample = element('button', 'chip sample', '▶ Sample');
+      sample.type = 'button';
+      sample.title = 'Five minutes of the narration';
+      sample.onclick = () => playSample(sample, hit.sample_url);
+      actions.append(sample);
+    }
+    row.append(cover, main, actions);
+    return row;
+  }
+
+  async function search(q) {
+    const next = { q, results: [], error: '' };
+    try { next.results = (await api(`/api/search?q=${encodeURIComponent(q)}`, 'GET')).results; }
+    catch (error) { next.error = error.message; }
+    if (last.q !== q) return;
+    found = next;
+    render();
+  }
+
+  function render() {
+    const { q, shown } = last;
+    section.textContent = '';
+    section.hidden = !q;
+    if (!q) return;
+    if (found.q === q) {
+      const head = element('div', 'beyond-head');
+      const count = found.results.length ? `${found.results.length} for “${q}”` : `nothing for “${q}”`;
+      head.append(element('h2', null, 'On Audible'), element('span', 'n', count));
+      section.append(head);
+      if (found.error) section.append(element('p', 'empty', found.error));
+      else if (!found.results.length) section.append(element('p', 'empty', 'Nothing on Audible matches either.'));
+      else found.results.forEach((hit) => section.append(hitRow(hit)));
+      return;
+    }
+    if (!shown) {
+      section.append(element('p', 'empty', 'Searching Audible…'));
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (last.q === q) search(q); }, AUTO_DELAY_MS);
+      return;
+    }
+    const ask = element('button', 'ask', `Not here? Search Audible for “${q}”`);
+    ask.type = 'button';
+    ask.onclick = () => { ask.disabled = true; ask.textContent = 'Searching Audible…'; search(q); };
+    section.append(ask);
+  }
+
+  function update(query, shown) {
+    last = { q: query.length >= MIN_QUERY_CHARS ? query : '', shown };
+    render();
+  }
+  return { update };
+})();
+
 // ---------- Live search: filter the rendered tiles as you type ----------
-// Same fields as the server's q (title, author, series, tags). Enter or Filter still submits, so a search
-// stays shareable as a URL. The shelf listens for rt-search and rebuilds from the visible tiles.
+// Same fields as the server's q (title, author, narrator, series, tags). Enter or Filter still submits, so a
+// search stays shareable as a URL. The shelf listens for rt-search and rebuilds from the visible tiles.
 
 (function liveSearch() {
   const input = document.querySelector('.search input');
@@ -889,18 +1057,22 @@ document.querySelectorAll('.book').forEach((tile) => {
   const serverQuery = (new URLSearchParams(location.search).get('q') || '').toLowerCase();
   let timer = null;
 
+  // Punctuation and case are folded on both sides, so "moby dick" finds Moby-Dick and "dont" finds Don't.
+  const fold = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
   function apply() {
-    const needle = input.value.trim().toLowerCase();
-    if (serverQuery && !needle.includes(serverQuery)) { form.requestSubmit(); return; }   // broadening a server-narrowed page needs a fresh one
+    const needle = fold(input.value);
+    if (serverQuery && !needle.includes(fold(serverQuery))) { form.requestSubmit(); return; }   // broadening a server-narrowed page needs a fresh one
     let shown = 0;
     tiles.forEach((tile) => {
-      const haystack = `${tile.dataset.title} ${tile.dataset.author} ${tile.dataset.series} ${tile.dataset.tags}`.toLowerCase();
+      const haystack = fold(`${tile.dataset.title} ${tile.dataset.author} ${tile.dataset.narrator} ${tile.dataset.series} ${tile.dataset.tags}`);
       const hit = !needle || haystack.includes(needle);
       tile.hidden = !hit;
       if (hit) shown++;
       else if (tile.open) tile.open = false;
     });
     if (noMatch) noMatch.hidden = shown > 0 || !tiles.length;
+    beyond.update(input.value.trim(), shown);
     document.dispatchEvent(new CustomEvent('rt-search'));
   }
 
@@ -921,4 +1093,5 @@ document.querySelectorAll('.book').forEach((tile) => {
     apply();
     input.focus();
   };
+  if (input.value.trim()) apply();   // a page narrowed by the server may hold no tiles at all: the search past the library still runs
 })();

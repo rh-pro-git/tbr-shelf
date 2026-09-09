@@ -21,7 +21,7 @@ from .config import Settings, load_settings
 from .context import AppContext
 from .covers import cache_cover, cover_path
 from .llm import LLMUnavailable
-from .routes import books, imports, media, pages, voice
+from .routes import books, catalog, imports, media, pages, voice
 from .routes.pages import STATIC_DIR
 from .speech import SpeechUnavailable
 
@@ -91,7 +91,7 @@ def create_app(settings: Settings | None = None, *, sweep_covers: bool = True) -
         GZipMiddleware, minimum_size=GZIP_MIN_BYTES, compresslevel=6
     )  # images are excluded by type
     app.mount("/static", CachedStatic(directory=str(STATIC_DIR)), name="static")
-    for router in (pages.router, books.router, media.router, imports.router, voice.router):
+    for router in (pages.router, books.router, catalog.router, media.router, imports.router, voice.router):
         app.include_router(router)
 
     @app.exception_handler(BookNotFound)

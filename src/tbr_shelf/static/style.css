@@ -279,3 +279,27 @@ html[data-density="mobile"] .spine .t{font-size:11px}
 #vc-log .u{align-self:flex-end; background:rgba(144,129,201,.2); border-radius:10px 10px 2px 10px; padding:6px 10px; max-width:85%}
 #vc-log .a{align-self:flex-start; background:rgba(255,255,255,.07); border-radius:10px 10px 10px 2px; padding:6px 10px; max-width:85%}
 #vc-status{padding:6px 12px; font-size:12px; opacity:.7; min-height:24px}
+
+/* Narrator on the detail, and the sample control */
+.narrator{margin:2px 0 0; color:var(--muted); font-size:13px}
+button.chip.sample{background:transparent; cursor:pointer; line-height:1.4}
+.chip.sample.playing{color:var(--amber); border-color:var(--amber)}
+
+/* Beyond the library: Audible hits under the list */
+.beyond{max-width:1180px; margin:18px auto 0; padding:0 18px 70px; display:grid; gap:10px}
+.beyond[hidden],html[data-view="shelf"] .beyond{display:none}
+.beyond-head{display:flex; align-items:baseline; gap:10px; color:var(--muted); font-size:13px}
+.beyond-head h2{margin:0; font-size:17px; color:var(--text)}
+.beyond .ask{justify-self:start; background:transparent; border:1px solid var(--border); border-radius:20px; padding:8px 14px; color:var(--text); cursor:pointer}
+.beyond .ask:hover{border-color:var(--muted)}
+.beyond .empty{margin:0}
+.hit{display:grid; grid-template-columns:44px 1fr auto; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px}
+.hit-cover{width:44px; height:66px; object-fit:cover; border-radius:5px; background:#0f1214}
+.hit-main{min-width:0}
+.hit-title{margin:0; font-size:15.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.hit-author,.hit-facts{margin:2px 0 0; font-size:12.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.hit-actions{display:flex; flex-direction:column; align-items:flex-end; gap:6px}
+.hit-actions .add{background:transparent; border:1px solid var(--tbr); color:var(--tbr); border-radius:20px; padding:6px 12px; font-weight:600; cursor:pointer; white-space:nowrap}
+.hit-actions .add:hover{background:var(--tbr); color:#0d1a26}
+.hit-actions .owned{font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); background:transparent; border:1px solid var(--border); border-radius:20px; padding:5px 10px; cursor:pointer}
+.hit-actions .owned[disabled]{cursor:default}

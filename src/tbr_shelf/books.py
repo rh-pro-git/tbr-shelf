@@ -5,9 +5,10 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
+from .catalogs import authors_overlap
 from .config import SHELVES
 from .db import Database, utc_now
-from .text import match_key, split_tags
+from .text import asin_from_url, match_key, split_tags
 
 SORT_ORDERS: dict[str, str] = {
     "added": "date_added DESC, id DESC",
@@ -97,8 +98,8 @@ def list_books(db: Database, filters: ListFilter) -> list[dict]:
         clauses.append("status=?")
         params.append(filters.status)
     if filters.query:
-        clauses.append("(title LIKE ? OR author LIKE ? OR series LIKE ? OR tags LIKE ?)")
-        params.extend([f"%{filters.query}%"] * 4)
+        clauses.append("(title LIKE ? OR author LIKE ? OR series LIKE ? OR tags LIKE ? OR narrator LIKE ?)")
+        params.extend([f"%{filters.query}%"] * 5)
     order = SORT_ORDERS.get(filters.sort, SORT_ORDERS["added"])
     with db.transaction() as connection:
         rows = connection.execute(
@@ -125,6 +126,32 @@ def all_tags(db: Database) -> list[str]:
     with db.transaction() as connection:
         rows = connection.execute("SELECT tags FROM books WHERE archived=0").fetchall()
     return sorted({tag for (tags,) in rows for tag in split_tags(tags)}, key=str.casefold)
+
+
+def find_by_asin(db: Database, asin: str) -> int | None:
+    """The book, archived or not, whose store link names this edition."""
+    with db.transaction() as connection:
+        row = connection.execute("SELECT id FROM books WHERE store_url LIKE ?", (f"%/pd/{asin}%",)).fetchone()
+    return int(row[0]) if row else None
+
+
+def tag_owned(db: Database, candidates: list[dict]) -> None:
+    """Mark each catalog hit with the id of the live book that is the same edition (ASIN), or the same
+    title by the same author; None when it is not in the library."""
+    with db.transaction() as connection:
+        rows = connection.execute(
+            "SELECT id, title, author, store_url FROM books WHERE archived=0"
+        ).fetchall()
+    by_asin = {asin: row["id"] for row in rows if (asin := asin_from_url(row["store_url"]))}
+    for candidate in candidates:
+        wanted = match_key(candidate.get("title", ""))
+        same_title = (
+            row["id"]
+            for row in rows
+            if match_key(row["title"]) == wanted
+            and authors_overlap(row["author"], candidate.get("author", ""))
+        )
+        candidate["book_id"] = by_asin.get(candidate.get("asin")) or next(same_title, None)
 
 
 def dedupe_key(title: str, author: str, shelf: str) -> tuple[str, str, str]:

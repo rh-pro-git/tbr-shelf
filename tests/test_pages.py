@@ -64,3 +64,23 @@ def test_detail_fragment_has_title_nav_rows_around_the_summary(
     assert plain.count('class="booknav"') == 1  # no model and no summary: only the row above
     with_model = llm_client.get(f"/api/books/{add_book(llm_client)['id']}/detail").text
     assert with_model.count('class="booknav"') == 2
+
+
+def test_page_and_detail_carry_the_narrator_and_the_sample(client: TestClient) -> None:
+    book = client.get(f"/api/books/{add_book(client)['id']}").json()["book"]
+    client.patch(
+        f"/api/books/{book['id']}",
+        json={
+            "version": book["version"],
+            "narrator": "Rob Inglis",
+            "store_url": "https://www.audible.com/pd/B0HOBBIT01",
+        },
+    )
+    page = client.get("/").text
+    assert 'data-narrator="Rob Inglis"' in page and 'id="beyond"' in page
+    assert 'placeholder="Search title, author, narrator or tag"' in page
+    fragment = client.get(f"/api/books/{book['id']}/detail").text
+    assert "Narrated by Rob Inglis" in fragment and 'data-field="narrator"' in fragment
+    assert f'data-a="sample" data-sample="/api/books/{book["id"]}/sample"' in fragment
+    plain = client.get(f"/api/books/{add_book(client, title='Emma')['id']}/detail").text
+    assert 'data-a="sample"' not in plain and "Narrated by" not in plain

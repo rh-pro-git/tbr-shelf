@@ -132,3 +132,39 @@ def test_envelope_parser_accepts_legacy_list_and_garbage() -> None:
     assert parse_lookup_envelope('[{"title": "x"}]') == {"candidates": [{"title": "x"}]}
     assert parse_lookup_envelope("not json") == {"candidates": []}
     assert parse_lookup_envelope(None) == {}
+
+
+def test_audible_match_fills_narrator_and_a_blank_series_only() -> None:
+    candidates = [
+        {
+            "title": "Dune", "author": "Frank Herbert", "editions": 1, "source": "Audible", "cover": "",
+            "asin": "B0DUNE0001", "narrator": "Scott Brick", "series_title": "Dune Saga",
+        },
+    ]  # fmt: skip
+    changes = lookup_changes(book(), candidates, OK)
+    assert changes["narrator"] == "Scott Brick" and changes["series"] == "Dune Saga"
+    kept = lookup_changes(book(narrator="Simon Vance", series="Dune #1"), candidates, OK)
+    assert "narrator" not in kept and "series" not in kept
+    refreshed = lookup_changes(book(narrator="Simon Vance", series="Dune #1"), candidates, OK, refresh=True)
+    assert refreshed["narrator"] == "Scott Brick" and "series" not in refreshed
+
+
+def test_an_audible_edition_by_another_author_supplies_nothing() -> None:
+    candidates = [
+        {"title": "Dune", "author": "Frank Herbert", "editions": 30, "source": "Open Library", "cover": "https://ol"},
+        {
+            "title": "Dune", "author": "Study Guide Co", "editions": 0, "source": "Audible", "cover": "https://aud",
+            "asin": "B0STUDY001", "minutes": 61, "narrator": "Someone",
+        },
+    ]  # fmt: skip
+    changes = lookup_changes(book(), candidates, OK)
+    assert changes["lookup_state"] == "ready" and changes["cover"] == "https://ol"
+    assert not {"store_url", "audiobook_length", "narrator"} & changes.keys()
+
+
+def test_candidate_changes_carries_narrator_and_series_for_an_asin() -> None:
+    picked = {"title": "Dune", "asin": "B0DUNE0001", "narrator": "Scott Brick", "series_title": "Dune Saga"}
+    changes, _ = candidate_changes(book(), picked)
+    assert changes["narrator"] == "Scott Brick" and changes["series"] == "Dune Saga"
+    kept, _ = candidate_changes(book(narrator="Simon Vance", series="Dune #1"), picked)
+    assert "narrator" not in kept and "series" not in kept

@@ -145,6 +145,7 @@ def to_record(book: dict, product: dict | None) -> dict:
         "asin": book["asin"],
         "title": (product.get("title") or book["title"]).strip()[:500],
         "author": ", ".join(authors[:3])[:500],
+        "narrator": ", ".join(n["name"] for n in (product.get("narrators") or [])[:3] if n.get("name")),
         "series": series_of(book),
         "shelf": "Wishlist" if wishlist else "Audible",
         "status": "Unread" if wishlist else status_of(book),

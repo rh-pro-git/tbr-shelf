@@ -147,6 +147,10 @@ def _rename_spine_preference(connection: sqlite3.Connection) -> None:
     connection.execute("UPDATE books SET spine_pref='external' WHERE spine_pref='skill'")
 
 
+def _add_narrator(connection: sqlite3.Connection) -> None:
+    connection.execute("ALTER TABLE books ADD COLUMN narrator TEXT")
+
+
 MIGRATIONS: tuple[Migration, ...] = (
     _create_books,
     _canonicalize_tags,
@@ -155,4 +159,5 @@ MIGRATIONS: tuple[Migration, ...] = (
     _add_physical_format,
     _add_spine_columns,
     _rename_spine_preference,
+    _add_narrator,
 )

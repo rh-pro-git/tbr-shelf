@@ -181,3 +181,101 @@ def test_tbr_is_a_status_and_a_virtual_shelf(client: TestClient) -> None:
     assert (
         client.get("/?shelf=TBR&status=Reading").status_code == 200
     )  # the tab wins over a stale status filter
+
+
+PRODUCT = {
+    "title": "Dune", "author": "Frank Herbert", "narrator": "Scott Brick", "series_title": "Dune Saga",
+    "year": 2007, "cover": "https://img/dune.jpg", "audible_cover": "https://img/dune.jpg",
+    "asin": "B0DUNE0001", "minutes": 1265, "abridged": False, "source": "Audible", "editions": 0,
+    "page_count": None, "sample_url": "https://samples/dune.mp3", "summary": "Desert planet.",
+}  # fmt: skip
+
+
+def stub_product(monkeypatch: pytest.MonkeyPatch, product: dict | None) -> None:
+    async def fake(_asin: str):
+        return product
+
+    monkeypatch.setattr(catalogs, "audible_product", fake)
+
+
+def test_add_by_asin_lands_enriched_and_runs_no_lookup(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub_product(monkeypatch, PRODUCT)
+    response = client.post("/api/books", json={"title": "dune", "asin": "B0DUNE0001", "shelf": "Wishlist"})
+    assert response.status_code == 201, response.text
+    book = client.get(f"/api/books/{response.json()['book']['id']}").json()["book"]
+    assert book["title"] == "Dune" and book["narrator"] == "Scott Brick" and book["series"] == "Dune Saga"
+    assert book["store_url"] == "https://www.audible.com/pd/B0DUNE0001"
+    assert book["audiobook_length"] == "21h 5m" and book["year"] == 2007
+    assert book["cover"] == "https://img/dune.jpg" and book["lookup_state"] == "ready"
+    assert book["summary_state"] == "ready" and book["summary"] == "Desert planet."
+    again = client.post("/api/books", json={"title": "Dune", "asin": "B0DUNE0001", "shelf": "Wishlist"})
+    assert again.status_code == 409 and again.json()["detail"]["book_id"] == book["id"]
+    stub_product(monkeypatch, {**PRODUCT, "asin": "B0DUNE0002", "title": "Dune Messiah", "summary": ""})
+    silent = client.post("/api/books", json={"title": "x", "asin": "B0DUNE0002"}).json()["book"]
+    assert silent["summary_state"] == "none"  # no model configured, so nothing is queued for it
+
+
+def test_add_by_asin_rejects_what_audible_cannot_name(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert (
+        client.post("/api/books", json={"title": "x", "asin": "B0OFFLINE1"}).status_code == 503
+    )  # catalog refused
+    stub_product(monkeypatch, None)
+    assert client.post("/api/books", json={"title": "x", "asin": "B000000000"}).status_code == 404
+    assert client.post("/api/books", json={"title": "x", "asin": "nope"}).status_code == 422
+
+
+def test_search_tags_hits_already_in_the_library(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    owned = client.get(f"/api/books/{add_book(client, title='Dune', author='Frank Herbert')['id']}").json()[
+        "book"
+    ]
+    client.patch(
+        f"/api/books/{owned['id']}",
+        json={"version": owned["version"], "store_url": "https://www.audible.com/pd/B0DUNE0001"},
+    )
+    emma = add_book(client, title="Emma", author="Jane Austen", shelf="Wishlist")
+
+    async def fake(keywords: str):
+        assert keywords == "Frank Herbert"
+        return [
+            {"title": "Dune Messiah", "author": "Frank Herbert", "asin": "B0DUNE0002"},
+            {"title": "Dune", "author": "Frank Herbert", "asin": "B0DUNE0001"},
+            {"title": "Emma", "author": "Jane Austen", "asin": "B0EMMA0001"},
+        ]
+
+    monkeypatch.setattr(catalogs, "audible_search", fake)
+    results = client.get("/api/search", params={"q": "  Frank   Herbert "}).json()["results"]
+    assert [hit["book_id"] for hit in results] == [None, owned["id"], emma["id"]]
+    assert client.get("/api/search", params={"q": "x"}).json() == {"q": "x", "results": []}
+
+
+def test_search_reports_an_unreachable_catalog(client: TestClient) -> None:
+    assert client.get("/api/search", params={"q": "Dune"}).status_code == 503
+
+
+def test_sample_redirects_to_audible(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    book = client.get(f"/api/books/{add_book(client)['id']}").json()["book"]
+    assert client.get(f"/api/books/{book['id']}/sample").status_code == 404  # no Audible edition on it
+    client.patch(
+        f"/api/books/{book['id']}",
+        json={"version": book["version"], "store_url": "https://www.audible.com/pd/B0HOBBIT01"},
+    )
+    stub_product(monkeypatch, {**PRODUCT, "asin": "B0HOBBIT01", "sample_url": "https://samples/hobbit.mp3"})
+    response = client.get(f"/api/books/{book['id']}/sample", follow_redirects=False)
+    assert response.status_code == 302 and response.headers["location"] == "https://samples/hobbit.mp3"
+    stub_product(monkeypatch, {**PRODUCT, "asin": "B0HOBBIT01", "sample_url": None})
+    assert client.get(f"/api/books/{book['id']}/sample", follow_redirects=False).status_code == 404
+
+
+def test_narrator_is_editable_and_searchable(client: TestClient) -> None:
+    book = client.get(f"/api/books/{add_book(client)['id']}").json()["book"]
+    patched = client.patch(
+        f"/api/books/{book['id']}", json={"version": book["version"], "narrator": "  Rob Inglis "}
+    )
+    assert patched.json()["book"]["narrator"] == "Rob Inglis"
+    assert "The Hobbit" in client.get("/?q=Inglis").text
+    cleared = client.patch(f"/api/books/{book['id']}", json={"version": book["version"] + 1, "narrator": ""})
+    assert cleared.json()["book"]["narrator"] is None

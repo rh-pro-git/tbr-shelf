@@ -7,7 +7,9 @@ Three catalogs are queried in parallel:
 * Google Books, keyless. It rate-limits aggressively, so it contributes
   candidates but never decides the verdict.
 * The Audible catalog API, keyless. The audiobook-native source: it carries
-  independent titles the others lack and supplies cover art, runtime and the ASIN.
+  independent titles the others lack and supplies cover art, runtime, the narrator,
+  the series and the ASIN. Its keyword search is also the way past the library:
+  one box that matches title, author and narrator.
 """
 
 from __future__ import annotations
@@ -29,7 +31,19 @@ GOOGLE_BOOKS_VOLUMES = "https://www.googleapis.com/books/v1/volumes"
 AUDIBLE_CATALOG = "https://api.audible.com/1.0/catalog/products"
 
 VERDICT_SOURCES = ("Open Library", "Audible")
-MERGEABLE_FIELDS = ("page_count", "physical_format", "year", "cover", "asin", "minutes", "audible_cover")
+AUDIBLE_RESPONSE_GROUPS = "media,contributors,product_desc,product_attrs,series"
+AUDIBLE_SEARCH_LIMIT = 12
+MERGEABLE_FIELDS = (
+    "page_count",
+    "physical_format",
+    "year",
+    "cover",
+    "asin",
+    "minutes",
+    "audible_cover",
+    "narrator",
+    "series_title",
+)
 
 
 def _source_status(result: object) -> str:
@@ -93,44 +107,81 @@ async def google_books_candidates(title: str, author: str) -> list[Candidate]:
     return candidates
 
 
+def audible_candidate(product: dict) -> Candidate | None:
+    """One catalog product as a candidate; None for anything without an ASIN or title, or not in English."""
+    asin = product.get("asin")
+    if not asin or not product.get("title"):
+        return None
+    if (product.get("language") or "english").lower() != "english":
+        return None
+    cover = (product.get("product_images") or {}).get("500", "")
+    series = (product.get("series") or [{}])[0]
+    narrators = [n["name"] for n in (product.get("narrators") or [])[:3] if n.get("name")]
+    return {
+        "title": product["title"],
+        "author": ", ".join(a.get("name", "") for a in (product.get("authors") or [])[:3]),
+        "narrator": ", ".join(narrators) or None,
+        "series_title": series.get("title") or None,
+        "year": year_from(product.get("release_date")),
+        "cover": cover,
+        "audible_cover": cover,
+        "page_count": None,
+        "editions": 0,
+        "source": "Audible",
+        "asin": asin,
+        "minutes": product.get("runtime_length_min"),
+        "abridged": (product.get("format_type") or "") == "abridged",
+        "sample_url": product.get("sample_url") or None,
+    }
+
+
 async def audible_candidates(title: str, author: str) -> list[Candidate]:
     """Two queries: title+author surfaces the right edition of a generic title, title-only keeps
     the wrong-stored-author safety net. English, unabridged editions sort first so ties pick them."""
-    base = {
-        "title": title,
-        "num_results": 5,
-        "response_groups": "media,contributors,product_desc,product_attrs",
-    }
+    base = {"title": title, "num_results": 5, "response_groups": AUDIBLE_RESPONSE_GROUPS}
     queries = [base, {**base, "author": author}] if author else [base]
     responses = await asyncio.gather(*[net.request("GET", AUDIBLE_CATALOG, params=q) for q in queries])
     candidates = []
     seen: set[str] = set()
     for response in responses:
         for product in response.json().get("products", []):
-            asin = product.get("asin")
-            if not asin or not product.get("title") or asin in seen:
+            candidate = audible_candidate(product)
+            if candidate is None or candidate["asin"] in seen:
                 continue
-            if (product.get("language") or "english").lower() != "english":
-                continue
-            seen.add(asin)
-            cover = (product.get("product_images") or {}).get("500", "")
-            candidates.append(
-                {
-                    "title": product["title"],
-                    "author": ", ".join(a.get("name", "") for a in (product.get("authors") or [])[:3]),
-                    "year": year_from(product.get("release_date")),
-                    "cover": cover,
-                    "audible_cover": cover,
-                    "page_count": None,
-                    "editions": 0,
-                    "source": "Audible",
-                    "asin": asin,
-                    "minutes": product.get("runtime_length_min"),
-                    "abridged": (product.get("format_type") or "") == "abridged",
-                }
-            )
+            seen.add(candidate["asin"])
+            candidates.append(candidate)
     candidates.sort(key=lambda c: c["abridged"])
     return candidates
+
+
+async def audible_search(keywords: str) -> list[Candidate]:
+    """Audible's keyword search: title, author and narrator in one box. Each hit carries its sample URL."""
+    response = await net.request(
+        "GET",
+        AUDIBLE_CATALOG,
+        params={
+            "keywords": keywords,
+            "num_results": AUDIBLE_SEARCH_LIMIT,
+            "response_groups": AUDIBLE_RESPONSE_GROUPS + ",sample",
+        },
+    )
+    return [c for product in response.json().get("products", []) if (c := audible_candidate(product))]
+
+
+async def audible_product(asin: str) -> Candidate | None:
+    """The exact edition by ASIN, with the publisher's summary and the sample URL.
+
+    A bad ASIN comes back 200 with a product that has no title; that is None here, not an error."""
+    response = await net.request(
+        "GET",
+        f"{AUDIBLE_CATALOG}/{asin}",
+        params={"response_groups": AUDIBLE_RESPONSE_GROUPS + ",product_extended_attrs,sample"},
+    )
+    product = response.json().get("product") or {}
+    candidate = audible_candidate(product)
+    if candidate is not None:
+        candidate["summary"] = strip_html(product.get("publisher_summary"))
+    return candidate
 
 
 async def publisher_summary(asin: str) -> str:
