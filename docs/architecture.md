@@ -26,7 +26,7 @@ browser ──HTTP──▶ FastAPI app ──▶ SQLite (library.db, WAL)
 | `db.py` | Connection context manager and forward-only migrations (`schema_version` table). |
 | `books.py` | Repository: reads, optimistic-locked writes, listing, dedupe keys. |
 | `text.py` | Pure helpers: match keys, tag canonicalization, small formatters. |
-| `catalogs.py` | The three metadata sources, candidate merging, exact-match rules. |
+| `catalogs.py` | The three metadata sources, candidate merging, exact-match rules; Audible's keyword search and by-ASIN product. |
 | `lookup.py` | The lookup task and the decision of what changes on the book (pure function). |
 | `covers.py` | Cover cache: fetch once with an atomic swap, sniff the type, serve the source or a display-size WebP derivative. |
 | `spines.py` | Local spine renderer (PIL), external spine fitting, effective-source rule; every served spine is WebP. |
@@ -34,7 +34,7 @@ browser ──HTTP──▶ FastAPI app ──▶ SQLite (library.db, WAL)
 | `summaries.py` | Spoiler-free summaries (publisher copy by ASIN first, the model as fallback) and similar-book suggestions. |
 | `voice.py` | The librarian: prompt assembly, session history, conversation persistence, gated preferences. |
 | `importers.py` | CSV rows (enriched afterwards) and pre-enriched rows (not). |
-| `routes/` | HTTP surface, one router per concern (`pages.py` also serves the per-tile detail fragment). `app.py` wires them, gzip, static caching and the exception handlers. |
+| `routes/` | HTTP surface, one router per concern (`catalog.py` is the search past the library; `pages.py` also serves the per-tile detail fragment). `app.py` wires them, gzip, static caching and the exception handlers. |
 
 ## Decisions that shape the code
 
@@ -49,10 +49,18 @@ exact-title match, or the best match disagrees with the stored author) the book
 is parked in `verify` with the candidates attached, and a person picks. The rule
 lives in one pure function, `lookup_changes`, which is why it is easy to test.
 The same function with `refresh=True` replaces the fields the catalogs own (year,
-pages, format, runtime, store link) when the match has a value, never blanks one,
-keeps the author rule, and leaves the chosen cover alone. Refresh then
-re-downloads the cover *before* purging its derivatives, so a failed download
-changes nothing.
+pages, format, runtime, narrator, store link) when the match has a value, never
+blanks one, keeps the author rule, and leaves the chosen cover alone. The Audible
+edition is trusted only when its author agrees with the stored one; an exact
+title by someone else supplies nothing. Series text belongs to the reader and is
+filled only when blank. Refresh then re-downloads the cover *before* purging its
+derivatives, so a failed download changes nothing.
+
+**Adding from the catalog skips lookup.** An edition picked from Audible's search
+arrives by ASIN with everything the catalog knows about it, so the row lands
+complete and never enters `verify`; the same ASIN twice is a conflict that names
+the existing book. The narration sample is resolved from that ASIN at tap time
+and redirected to, never stored, so there is nothing to backfill.
 
 **Sources are kept as fetched; everything served is a derivative.** The cached
 cover and the external spine asset are never re-encoded. Display sizes are WebP

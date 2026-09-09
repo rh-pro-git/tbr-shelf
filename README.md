@@ -21,16 +21,24 @@ and the tracker is complete without any of them.
   an open book has previous/next controls so you can walk the list without
   closing it.
 - **Search as you type.** The search box filters the page as you type, across
-  title, author, series and tags, with one tap to clear; the shelf view follows.
-  Tags are picked from a typeahead instead of a long dropdown.
+  title, author, narrator, series and tags, with one tap to clear; the shelf view
+  follows. Tags are picked from a typeahead instead of a long dropdown.
+- **And past it.** When nothing on the page matches, Audible's keyword search
+  runs below the list on its own; when something does, one tap runs it. Hits you
+  already own show their status and open the tile; the rest add that exact
+  edition with **+ Wishlist**, complete with narrator, runtime, cover and the
+  publisher's summary, so no lookup runs for it. Every hit, and every book with
+  an Audible edition, has a five-minute narration sample.
 - **Metadata that never overwrites you.** Adding a title queries Open Library,
   Google Books and the Audible catalog in parallel. Blank fields are filled;
-  existing ones are left alone. When the catalogs disagree with what you typed
-  or can't find an exact match, the book is flagged for review with the
-  candidates attached, and you pick. When you *want* the catalogs' current
-  values, **Refresh data** on a book replaces its year, pages, format, runtime
-  and store link, re-downloads the cover and rebuilds the cached sizes. It still
-  never touches your title, tags, notes, or the cover you chose.
+  existing ones are left alone. The Audible edition that agrees with your author
+  supplies the store link, runtime and narrator. When the catalogs disagree with
+  what you typed or can't find an exact match, the book is flagged for review
+  with the candidates attached, and you pick. When you *want* the catalogs'
+  current values, **Refresh data** on a book replaces its year, pages, format,
+  runtime, narrator and store link, re-downloads the cover and rebuilds the
+  cached sizes. It still never touches your title, tags, notes, series, or the
+  cover you chose.
 - **Covers are yours to choose.** The first cover is proposed once. After that,
   "Change cover" shows every candidate and every edition Open Library knows for
   the work, and you click the one you like.
@@ -106,8 +114,9 @@ docker build -t tbr-shelf .
 docker run -p 8460:8460 -v tbr-data:/data tbr-shelf
 ```
 
-Add a book with the **+ Add book** panel. Metadata lookup runs in the
-background and the tile refreshes when it lands.
+Add a book with the **+ Add book** panel, and metadata lookup runs in the
+background until the tile refreshes. Or search for it: anything not on the page
+can be added from Audible's catalog in one tap, already complete.
 
 ## Configuration
 
@@ -225,6 +234,9 @@ module map and the decisions behind it.
 - No authentication (see above).
 - Google Books is rate-limited for keyless callers and frequently contributes
   nothing; Open Library and the Audible catalog carry the lookup.
+- The search past the library, add-by-ASIN and the narration samples all come
+  from Audible's keyless catalog API. There is no second source for what it
+  lacks, and a title with no audiobook edition will not appear there.
 - Local spines are plausible, not real. The external-asset API exists because
   "real" needs a source this project cannot ship.
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.3.0 — 2026-09-09
+
+Who reads it, and what is not on the shelf yet.
+
+- **Narrator** is a field (migration 8): filled from the author-verified Audible edition on
+  lookup, replaced on Refresh, editable, shown under the byline, and part of the search on
+  the page and on the server. The series is filled from the same edition only when blank.
+  The enriched importer carries the narrator too.
+- **Search past the library.** When a search finds nothing on the page, Audible's keyword
+  search runs below the list on its own; when it finds something, one tap runs it. One box
+  matches title, author and narrator. A hit already in the library shows its status and opens
+  the tile; the rest add with **+ Wishlist**.
+- **Add by ASIN.** `POST /api/books` with `asin` inserts that exact edition already enriched —
+  narrator, series, runtime, year, cover, store link and the publisher's summary — so no
+  lookup runs for it and nothing lands in verify. The same ASIN twice is a 409 naming the
+  existing book; an ASIN the catalog cannot name is a 404.
+- **Hear a sample.** Every book with an Audible edition, and every search hit, has a
+  five-minute narration sample. `GET /api/books/{id}/sample` resolves the ASIN at tap time
+  and redirects; nothing is stored. The sample and the summary narration stop each other.
+- An exact-title Audible edition by a different author no longer supplies a store link,
+  runtime or narrator. Candidates merged across catalogs keep narrator and series title.
+- The page search folds case and punctuation on both sides, so "moby dick" finds *Moby-Dick*
+  and the hit Audible tags as already yours is the one the page shows.
+
 ## 1.2.0 — 2026-09-06
 
 Finding things in a large library, and summaries that come from the source.
